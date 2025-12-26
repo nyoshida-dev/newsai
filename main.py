@@ -25,17 +25,14 @@ def main() -> int:
     slack_channel = os.environ.get("SLACK_CHANNEL")
 
     if not slack_token:
-        print("❌ エラー: SLACK_BOT_TOKEN が設定されていません", file=sys.stderr)
-        return 1
+        print("⚠️ SLACK_BOT_TOKEN が設定されていません")
+        return 0
     if not openai_key:
-        print("❌ エラー: OPENAI_API_KEY が設定されていません", file=sys.stderr)
-        return 1
+        print("⚠️ OPENAI_API_KEY が設定されていません")
+        return 0
     if not slack_channel:
-        print(
-            "❌ エラー: SLACK_CHANNEL が設定されていません。投稿先チャンネルを環境変数で指定してください",
-            file=sys.stderr,
-        )
-        return 1
+        print("⚠️ SLACK_CHANNEL が設定されていません")
+        return 0
 
     if verbose:
         print("📥 1週間分のSlackメッセージを取得します...")
