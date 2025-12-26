@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import argparse
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -9,10 +10,15 @@ from slack_sdk.errors import SlackApiError
 
 
 class SlackPoster:
-    def __init__(self, token: str, default_channel: Optional[str] = None):
+    def __init__(self, token: str, default_channel: Optional[str] = None, verbose: bool = False):
         self.client = WebClient(token=token)
         self.default_channel = default_channel or os.environ.get("SLACK_CHANNEL")
         self._channel_cache: Dict[str, str] = {}
+        self.verbose = verbose
+
+    def _log(self, message: str) -> None:
+        if self.verbose:
+            print(message)
 
     def _load_channel_cache(self) -> None:
         if self._channel_cache:
@@ -94,12 +100,12 @@ class SlackPoster:
     def post(self, text: str, channel: Optional[str] = None, thread: bool = True) -> Optional[str]:
         channel_id = self._resolve_channel_id(channel or self.default_channel or "")
         if not channel_id:
-            print("❌ チャンネルが見つかりませんでした")
+            print("❌ チャンネルが見つかりませんでした", file=sys.stderr)
             return None
         formatted_text = self.format_slack_message(text)
         text_chunks = self._split_into_chunks(formatted_text)
         if not text_chunks:
-            print("❌ 投稿するテキストが空です")
+            print("❌ 投稿するテキストが空です", file=sys.stderr)
             return None
         try:
             first = self.client.chat_postMessage(
@@ -115,12 +121,10 @@ class SlackPoster:
                 permalink = perm.get("permalink")
             except SlackApiError:
                 permalink = None
-            print("✅ Slackへの投稿が完了しました")
-            if permalink:
-                print(f"🔗 {permalink}")
+            self._log("✅ Slackへの投稿が完了しました")
             return permalink
         except SlackApiError as e:
-            print(f"❌ Slack投稿エラー: {getattr(e.response, 'data', e.response).get('error', str(e))}")
+            print(f"❌ Slack投稿エラー: {getattr(e.response, 'data', e.response).get('error', str(e))}", file=sys.stderr)
             return None
 
 
@@ -134,33 +138,38 @@ def main() -> int:
   echo "テキスト" | python post_slack.py --channel general
   python post_slack.py --channel general --text "本文"
   python post_slack.py --no-thread --text "スレッド化しない"
+  python post_slack.py -v --text "詳細ログを表示"
         """,
     )
     parser.add_argument("--channel", type=str, help="投稿先チャンネル名またはID")
     parser.add_argument("--token", type=str, help="Slackボットトークン")
     parser.add_argument("--text", type=str, help="投稿する本文。未指定時はstdinを読む")
     parser.add_argument("--no-thread", action="store_true", help="スレッド化しない")
+    parser.add_argument("-v", "--verbose", action="store_true", help="詳細なログを出力する")
     args = parser.parse_args()
 
     slack_token = args.token or os.environ.get("SLACK_BOT_TOKEN")
     if not slack_token:
-        print("❌ エラー: SLACK_BOT_TOKEN が設定されていません")
-        print("export SLACK_BOT_TOKEN='xoxb-...' または --token を指定してください")
+        print("❌ エラー: SLACK_BOT_TOKEN が設定されていません", file=sys.stderr)
+        print("export SLACK_BOT_TOKEN='xoxb-...' または --token を指定してください", file=sys.stderr)
         return 1
 
     text = args.text
     if text is None:
         try:
-            import sys
             if not sys.stdin.isatty():
                 text = sys.stdin.read()
         except Exception:
             text = None
     if not text or not text.strip():
-        print("❌ エラー: 投稿テキストが空です。--text で指定するかstdinから入力してください")
+        print("❌ エラー: 投稿テキストが空です。--text で指定するかstdinから入力してください", file=sys.stderr)
         return 1
 
-    poster = SlackPoster(token=slack_token, default_channel=args.channel or os.environ.get("SLACK_CHANNEL"))
+    poster = SlackPoster(
+        token=slack_token,
+        default_channel=args.channel or os.environ.get("SLACK_CHANNEL"),
+        verbose=args.verbose
+    )
     poster.post(text=text.strip(), channel=args.channel, thread=not args.no_thread)
     return 0
 
