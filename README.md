@@ -10,7 +10,7 @@ Slack-message collection remains available (`[collect] source = "slack"`). Sched
 | `api` | Set `OPENAI_API_KEY` (optional `base_url` / `api_key_env` in `config.toml`). Use with `[collect.web] mode = "feeds"` only | `OPENAI_API_KEY` |
 | `codex` (default in example) | `npm i -g @openai/codex && codex login` | `CODEX_AUTH_JSON` (= contents of `~/.codex/auth.json`) |
 | `claude` | `npm i -g @anthropic-ai/claude-code && claude setup-token` | `CLAUDE_CODE_OAUTH_TOKEN` (= output of `claude setup-token`) |
-| `opencode` | `npm i -g opencode-ai` (+ login) | `OPENCODE_AUTH_JSON` (= contents of `~/.local/share/opencode/auth.json`) |
+| `opencode` | `npm i -g opencode-ai` (+ login) | `OPENCODE_AUTH_JSON` (= contents of `~/.local/share/opencode/auth.json`), or `OPENCODE_API_KEY` for a custom OpenAI-compatible provider |
 
 Always required (any provider):
 
@@ -115,6 +115,9 @@ Precedence (highest first): **CLI args > env vars > config.toml > built-in defau
 | `[llm]` | `max_completion_tokens` | Max tokens (`api` only) |
 | `[llm]` | `timeout_seconds` | Request / CLI timeout |
 | `[llm]` | `extra_cli_args` | Extra argv for CLI providers |
+| `[llm.opencode]` | `base_url` | Custom OpenAI-compatible API base URL; empty disables custom-provider setup |
+| `[llm.opencode]` | `npm` | opencode provider package (default `@ai-sdk/openai-compatible`) |
+| `[llm.opencode]` | `provider_id` | opencode provider ID (default `custom`) |
 | `[prompt]` | `system` | System prompt |
 | `[prompt]` | `instruction` | Instruction prompt |
 | `[prompt]` | `instruction_file` | If set, read this file instead of `instruction` |
@@ -223,3 +226,17 @@ Anyone may log in with GitHub, but only users with push access to the repo can u
 Saving from the dashboard does not preserve comments in config.toml (see config.example.toml for the commented reference).
 If the repo is org-owned with OAuth App restrictions, approve the app for the org.
 Local dev: create a second OAuth App with callback http://localhost:8787/auth/callback, copy .dev.vars.example to .dev.vars, then npx wrangler dev.
+
+### Dashboard credentials
+
+The dashboard's 「認証情報」 section writes credentials directly to GitHub Actions Secrets with GitHub's repository public key. Values are write-only: the dashboard can show whether each secret is registered and its update date, but it cannot read the stored value. Credential values are never persisted on Cloudflare.
+
+| Dashboard field | GitHub Actions Secret |
+|---|---|
+| Claude setup token | `CLAUDE_CODE_OAUTH_TOKEN` |
+| Codex `~/.codex/auth.json` | `CODEX_AUTH_JSON` |
+| opencode API key | `OPENCODE_API_KEY` |
+| opencode `~/.local/share/opencode/auth.json` (optional) | `OPENCODE_AUTH_JSON` |
+| OpenAI API key | `OPENAI_API_KEY` |
+
+For a custom OpenAI-compatible opencode provider, set 「opencode BASE URL」 in the LLM settings and register `OPENCODE_API_KEY`. The workflow creates `~/.config/opencode/opencode.json` for provider ID `custom`; set `[llm].model` to `custom/<model-name>` (for example, `custom/my-model`). Leaving the base URL empty disables this setup.

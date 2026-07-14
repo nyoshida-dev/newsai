@@ -19,6 +19,13 @@ timeout_seconds = 600
 # CLI プロバイダに追加で渡す引数
 extra_cli_args = []
 
+[llm.opencode]
+# OpenAI 互換 API の base URL。空文字の場合はカスタムプロバイダー設定を作成しない
+base_url = ""
+# opencode のカスタムプロバイダー設定（通常は変更不要）
+npm = "@ai-sdk/openai-compatible"
+provider_id = "custom"
+
 [prompt]
 # システムプロンプト
 system = """
@@ -112,4 +119,3 @@ weekday = "friday"
 hour = 18
 # IANA タイムゾーン名
 timezone = "Asia/Tokyo"
-

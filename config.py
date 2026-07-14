@@ -63,6 +63,10 @@ class Config:
     max_completion_tokens: int = 15000
     timeout_seconds: int = 600
     extra_cli_args: list[str] = field(default_factory=list)
+    # [llm.opencode] (consumed by the GitHub Actions workflow)
+    opencode_base_url: str = ""
+    opencode_npm: str = "@ai-sdk/openai-compatible"
+    opencode_provider_id: str = "custom"
     # [prompt]
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     instruction_prompt: str = DEFAULT_INSTRUCTION_PROMPT
@@ -138,6 +142,14 @@ def _apply_toml(cfg: Config, data: dict[str, Any]) -> Config:
         updates["timeout_seconds"] = int(llm["timeout_seconds"])
     if "extra_cli_args" in llm:
         updates["extra_cli_args"] = _as_list(llm["extra_cli_args"])
+
+    opencode = llm.get("opencode") or {}
+    if "base_url" in opencode:
+        updates["opencode_base_url"] = str(opencode["base_url"])
+    if "npm" in opencode:
+        updates["opencode_npm"] = str(opencode["npm"])
+    if "provider_id" in opencode:
+        updates["opencode_provider_id"] = str(opencode["provider_id"])
 
     if "system" in prompt:
         updates["system_prompt"] = str(prompt["system"])

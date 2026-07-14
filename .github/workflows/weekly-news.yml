@@ -81,18 +81,62 @@ jobs:
         env:
           OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
         run: |
-          mkdir -p ~/.local/share/opencode
-          printf '%s' "$OPENCODE_AUTH_JSON" > ~/.local/share/opencode/auth.json
-          chmod 600 ~/.local/share/opencode/auth.json
+          if [ -n "$OPENCODE_AUTH_JSON" ]; then
+            mkdir -p ~/.local/share/opencode
+            printf '%s' "$OPENCODE_AUTH_JSON" > ~/.local/share/opencode/auth.json
+            chmod 600 ~/.local/share/opencode/auth.json
+          fi
+
+      - name: Configure opencode custom provider
+        if: env.EFFECTIVE_PROVIDER == 'opencode'
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import tomllib
+
+          if not os.environ.get("OPENCODE_API_KEY"):
+              raise SystemExit
+          config_path = pathlib.Path("config.toml")
+          if not config_path.is_file():
+              raise SystemExit
+          llm = tomllib.load(config_path.open("rb")).get("llm", {})
+          opencode = llm.get("opencode", {})
+          base_url = str(opencode.get("base_url", "")).strip()
+          if not base_url:
+              raise SystemExit
+          npm = str(opencode.get("npm", "")).strip() or "@ai-sdk/openai-compatible"
+          provider_id = str(opencode.get("provider_id", "")).strip() or "custom"
+          data = {
+              "provider": {
+                  provider_id: {
+                      "npm": npm,
+                      "options": {
+                          "baseURL": base_url,
+                          "apiKey": "{env:OPENCODE_API_KEY}",
+                      },
+                  }
+              }
+          }
+          target = pathlib.Path.home() / ".config/opencode/opencode.json"
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps(data, ensure_ascii=False) + "\n")
+          target.chmod(0o600)
+          PY
 
       - name: LLM smoke test
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: uv run python llm_providers.py --prompt "1+1は？数字のみ回答してください。"
 
       - name: Run weekly summary
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: uv run python main.py ${{ inputs.dry_run == true && '--dry-run' || '' }}
