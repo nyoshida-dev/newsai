@@ -1,14 +1,14 @@
 ## newsai
 
-newsai (News×AI) is a tool that automatically generates "This Week's Highlights" from your organization's Slack messages and posts it to Slack.
-Scheduled runs use GitHub Actions. Fork this repository and configure the secrets / variables below for your chosen LLM provider.
+newsai (News×AI) collects the latest AI news from the web and X (via LLM web search and/or RSS), generates a weekly digest, and posts it to Slack.
+Slack-message collection remains available (`[collect] source = "slack"`). Scheduled runs use GitHub Actions. Fork this repository and configure the secrets / variables below for your chosen LLM provider.
 
 ### Secrets and variables (provider matrix)
 
 | Provider | Local install / login | GitHub Actions secret(s) |
 |---|---|---|
-| `api` (default) | Set `OPENAI_API_KEY` (optional `base_url` / `api_key_env` in `config.toml`) | `OPENAI_API_KEY` |
-| `codex` | `npm i -g @openai/codex && codex login` | `CODEX_AUTH_JSON` (= contents of `~/.codex/auth.json`) |
+| `api` | Set `OPENAI_API_KEY` (optional `base_url` / `api_key_env` in `config.toml`). Use with `[collect.web] mode = "feeds"` only | `OPENAI_API_KEY` |
+| `codex` (default in example) | `npm i -g @openai/codex && codex login` | `CODEX_AUTH_JSON` (= contents of `~/.codex/auth.json`) |
 | `claude` | `npm i -g @anthropic-ai/claude-code && claude setup-token` | `CLAUDE_CODE_OAUTH_TOKEN` (= output of `claude setup-token`) |
 | `opencode` | `npm i -g opencode-ai` (+ login) | `OPENCODE_AUTH_JSON` (= contents of `~/.local/share/opencode/auth.json`) |
 
@@ -16,7 +16,7 @@ Always required (any provider):
 
 - `SLACK_BOT_TOKEN`
 - `SLACK_CHANNEL`
-- `SLACK_EXCLUDE_CHANNELS` (optional)
+- `SLACK_EXCLUDE_CHANNELS` (optional; mainly for `source = "slack"`)
 
 Repository variable:
 
@@ -30,6 +30,8 @@ Repository variable:
 
 **Auth caveats:** Claude `setup-token` is the officially supported CI path. Codex `auth.json` in CI is positioned for trusted private automation (OpenAI recommends API keys for production). opencode subscription OAuth in CI is a gray zone — use at your own risk. Codex / opencode refresh tokens may rotate — re-seed the secret when auth fails. Never cache `auth.json` in `actions/cache`. `--dry-run` prints the digest into Actions logs.
 
+**X / Twitter:** coverage comes from the LLM’s built-in web search (CLI providers). No X API key is required.
+
 See the blog for more details.
 
 https://zenn.dev/peoplex_blog/articles/2509-how-to-create-ai-news
@@ -37,10 +39,11 @@ https://zenn.dev/peoplex_blog/articles/2509-how-to-create-ai-news
 ![newsai](https://github.com/user-attachments/assets/62359488-bf6e-48a1-a3d2-9140736fdc5f)
 
 ### Main components
-- **collect_slack_messages.py**: Collect recent messages from Slack and save them as JSON
-- **generate_weekly_news.py**: Analyze the collected messages and generate the weekly news copy
+- **collect_web_news.py**: Fetch RSS/Atom feeds and format items for analysis (also used in hybrid mode)
+- **collect_slack_messages.py**: Collect recent messages from Slack (optional; `source = "slack"`)
+- **generate_weekly_news.py**: Analyze Slack messages and generate weekly news copy
 - **post_slack.py**: Post the generated copy to Slack
-- **main.py**: Run collect → generate → post end to end
+- **main.py**: Run collect → generate → post end to end (`source` switches web vs slack)
 - **config.toml** / **config.py**: Externalized prompts and collection parameters
 - **llm_providers.py**: Multi-provider LLM abstraction (`api` / `codex` / `claude` / `opencode`)
 
@@ -51,8 +54,11 @@ https://zenn.dev/peoplex_blog/articles/2509-how-to-create-ai-news
 - **LLM credentials**: depends on provider (see matrix above). For `api`, an OpenAI-compatible API key.
 
 ### Slack permissions
-- `channels:read`, `channels:history`
+When `source = "web"` (default), the bot only needs:
 - `chat:write`
+
+When `source = "slack"`, also:
+- `channels:read`, `channels:history`
 - `channels.join` (if you want to auto-join public channels)
 
 ## Setup
@@ -97,14 +103,19 @@ Precedence (highest first): **CLI args > env vars > config.toml > built-in defau
 | `[llm]` | `timeout_seconds` | Request / CLI timeout |
 | `[llm]` | `extra_cli_args` | Extra argv for CLI providers |
 | `[prompt]` | `system` | System prompt |
-| `[prompt]` | `instruction` | Instruction prompt prepended to Slack messages |
+| `[prompt]` | `instruction` | Instruction prompt |
 | `[prompt]` | `instruction_file` | If set, read this file instead of `instruction` |
+| `[collect]` | `source` | `web` (default) \| `slack`. Override with `NEWSAI_SOURCE` |
 | `[collect]` | `days` | Collection window in days |
-| `[collect]` | `channel_filter` | Substring filter for channel names |
-| `[collect]` | `exclude_channels` | Extra excluded channels (union with `SLACK_EXCLUDE_CHANNELS`) |
-| `[collect]` | `max_messages_per_channel` | Cap messages per channel for analysis |
-| `[collect]` | `max_message_chars` | Truncate each message to this many chars |
-| `[collect]` | `auto_join` | Auto-join public channels |
+| `[collect]` | `channel_filter` | Substring filter for channel names (`slack`) |
+| `[collect]` | `exclude_channels` | Extra excluded channels (`slack`) |
+| `[collect]` | `max_messages_per_channel` | Cap messages per channel (`slack`) |
+| `[collect]` | `max_message_chars` | Truncate each message (`slack`) |
+| `[collect]` | `auto_join` | Auto-join public channels (`slack`) |
+| `[collect.web]` | `mode` | `llm_search` \| `feeds` \| `hybrid`. `llm_search`/`hybrid` need a CLI provider |
+| `[collect.web]` | `queries` | Search topics for LLM web search |
+| `[collect.web]` | `feeds` | RSS/Atom URLs for `feeds` / `hybrid` |
+| `[collect.web]` | `max_items_per_feed` | Cap items per feed |
 | `[post]` | `channel` | Default post channel (`SLACK_CHANNEL` env wins when set) |
 | `[post]` | `thread` | Post long text as a thread |
 | `[post]` | `header` | Custom header prefix (empty = default weekly title) |
@@ -116,6 +127,13 @@ uv run python llm_providers.py --provider claude --prompt "こんにちは"
 ```
 
 ## Scripts and how to run
+
+### collect_web_news.py (Collect RSS/Atom)
+- **Overview**: Fetch feeds and print formatted markdown for analysis
+- **Examples**
+```bash
+uv run python collect_web_news.py --feeds https://hnrss.org/newest?q=AI --days 7 -v
+```
 
 ### collect_slack_messages.py (Collect Slack messages)
 - **Overview**: Collect messages from public channels in the workspace for a specified period and save as `slack_messages_YYYYMMDD_HHMMSS.json`
@@ -132,7 +150,7 @@ uv run python collect_slack_messages.py --days 30 --channel general
 uv run python collect_slack_messages.py --output messages.json
 ```
 
-### generate_weekly_news.py (Generate weekly news)
+### generate_weekly_news.py (Generate weekly news from Slack JSON)
 - **Overview**: Read the saved JSON and, using the configured LLM provider, generate weekly news copy including "Highlights" and "Extras"
 - **Key arguments**
   - `--messages-file`: Path to the collected JSON (if omitted, automatically detect the latest `slack_messages_*.json`)
@@ -162,7 +180,7 @@ uv run python post_slack.py --channel general --text "Body"
 ```
 
 ### main.py (Run end to end)
-- **Overview**: Run collection → summary generation → Slack post end to end
+- **Overview**: Run collection → summary generation → Slack post. Default source is web/X AI news; set `source = "slack"` or `NEWSAI_SOURCE=slack` for the legacy Slack flow
 - **Required environment variables**: `SLACK_BOT_TOKEN`, `SLACK_CHANNEL`, plus provider credentials (see matrix)
 - **Key arguments**: `--provider`, `--model`, `--config`, `--dry-run` (generate and print, skip Slack post)
 - **Example**
