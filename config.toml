@@ -2,7 +2,7 @@
 
 [llm]
 provider = "codex"
-model = ""
+model = "gpt-5.6-sol"
 base_url = ""
 api_key_env = "OPENAI_API_KEY"
 max_completion_tokens = 15000
@@ -66,13 +66,12 @@ feeds = []
 max_items_per_feed = 20
 
 [post]
-channel = ""
+channel = "C07LLA7M8CE"
 thread = true
 header = "📰 今週のAIニュース"
 
 [schedule]
 frequency = "weekly"
-weekday = "friday"
-hour = 18
+weekday = "monday"
+hour = 9
 timezone = "Asia/Tokyo"
-
