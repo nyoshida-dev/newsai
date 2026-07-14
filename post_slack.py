@@ -10,11 +10,18 @@ from slack_sdk.errors import SlackApiError
 
 
 class SlackPoster:
-    def __init__(self, token: str, default_channel: Optional[str] = None, verbose: bool = False):
+    def __init__(
+        self,
+        token: str,
+        default_channel: Optional[str] = None,
+        verbose: bool = False,
+        header: str = "",
+    ):
         self.client = WebClient(token=token)
         self.default_channel = default_channel or os.environ.get("SLACK_CHANNEL")
         self._channel_cache: Dict[str, str] = {}
         self.verbose = verbose
+        self.header = header
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -92,7 +99,10 @@ class SlackPoster:
 
     def format_slack_message(self, summary: str) -> str:
         current_week = datetime.now().strftime("%Y年%m月第%U週")
-        header = f"📰 *今週の社内ニュース - {current_week}*\n\n"
+        if self.header:
+            header = f"{self.header}\n\n"
+        else:
+            header = f"📰 *今週の社内ニュース - {current_week}*\n\n"
         footer = f"\n\n---\n_Generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} by Weekly News Bot_"
         content = self._convert_channel_links(summary)
         return header + content + footer

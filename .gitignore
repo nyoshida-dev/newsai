@@ -208,3 +208,6 @@ __marimo__/
 
 # Slack messages
 slack_messages_*.json
+
+# AI orchestration artifacts
+.ai/

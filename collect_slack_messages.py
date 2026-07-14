@@ -12,9 +12,15 @@ import time
 load_dotenv()
 
 class SlackMessageCollector:
-    def __init__(self, token: str, verbose: bool = False):
+    def __init__(
+        self,
+        token: str,
+        verbose: bool = False,
+        exclude_channels: list[str] | None = None,
+    ):
         self.client = WebClient(token=token)
         self.messages = []
+        self._extra_exclude_channels = exclude_channels or []
         self.excluded_channels = self.get_excluded_channels()
         self.users = {}
         self.verbose = verbose
@@ -52,10 +58,13 @@ class SlackMessageCollector:
             return {}
 
     def get_excluded_channels(self) -> List[str]:
-        excluded = []
+        excluded: List[str] = []
         exclude_raw = os.environ.get("SLACK_EXCLUDE_CHANNELS", "")
         if exclude_raw:
             excluded.extend(exclude_raw.split(","))
+        for ch in self._extra_exclude_channels:
+            if ch and ch not in excluded:
+                excluded.append(ch)
         post_channel = os.environ.get("SLACK_CHANNEL", "")
         if post_channel and post_channel not in excluded:
             excluded.append(post_channel)

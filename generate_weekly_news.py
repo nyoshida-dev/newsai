@@ -5,14 +5,17 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import argparse
 from dotenv import load_dotenv
-from openai import OpenAI
 import re
+
+from config import Config, load_config
+from llm_providers import LLMProvider, LLMError, create_provider
 
 load_dotenv()
 
 class WeeklyNewsGenerator:
-    def __init__(self, openai_api_key: str, verbose: bool = False):
-        self.openai_client = OpenAI(api_key=openai_api_key)
+    def __init__(self, provider: LLMProvider, config: Config, verbose: bool = False):
+        self.provider = provider
+        self.config = config
         self.verbose = verbose
 
     def _log(self, message: str) -> None:
@@ -51,6 +54,8 @@ class WeeklyNewsGenerator:
     def prepare_messages_for_analysis(self, messages: List[Dict]) -> str:
         """メッセージを分析用に整形"""
         formatted_messages = []
+        max_chars = self.config.max_message_chars
+        max_per_channel = self.config.max_messages_per_channel
         
         # チャンネルごとにグループ化
         channels = {}
@@ -82,76 +87,41 @@ class WeeklyNewsGenerator:
             
             user_name = msg.get('user_name', '')
             channels[channel].append({
-                'text': text[:500],
+                'text': text[:max_chars],
                 'user_name': user_name
             })
         
         for channel, msgs in channels.items():
             if msgs:
                 formatted_messages.append(f"\n#チャンネル：【#{channel}】")
-                for msg in msgs[-100:]:
+                for msg in msgs[-max_per_channel:]:
                     user_part = f"[{msg['user_name']}] " if msg.get('user_name') else ""
                     formatted_messages.append(f"- {user_part}{msg['text']}")
         
         return "\n".join(formatted_messages)
 
     def generate_news_summary(self, messages_text: str) -> str:
-        self._log("🤖 OpenAI APIで分析中...")
+        self._log("🤖 LLMで分析中...")
         
         try:
-            prompt = """#指示
-以下のSlackメッセージから、「話題のニュース」として取り上げるのに良さそうなものをピックアップして「今週の注目ニュース」として取り上げるのにふさわしいものをピックアップしてください。
+            if self.config.instruction_file:
+                with open(self.config.instruction_file, "r", encoding="utf-8") as f:
+                    instruction = f.read()
+            else:
+                instruction = self.config.instruction_prompt
 
-- 上位10件の「今週の注目ニュース」を選んでください。
-- 外部のニュースは取り上げないでください。
-- もし重要なニュースが見つからない場合は、「今週は特に重要なニュースはありませんでした」と返してください。
-- ネガティブなニュースは取り上げないでください。
-- 番外編として、ユーモアのあるニュースを5件選んでください。
-- 出力結果には【注目ニュース】と【番外編】の2つのセクションを作成してください。
-- 出力結果には枕詞や最後のコメントは含めないでください。
-
-#出力形式
-- 各ニュースの間には必ず空行を1行入れてください。
-- ニュースタイトル。タイトルの先頭にニュースの番号を付けてください。ニュースの最後にはタイトルに対応する絵文字を付けてください。ニュースタイトルは*で囲んでください。
-- 詳細説明（1-2文）。200字以内程度。
-- 最後の行に、チャンネル名を記載してください。チャンネル名は必ず行頭に#から始めてください（Slackがリンクとして認識するため）。
-
-例：
-【注目ニュース】
-
-1. *ニュースタイトル* 絵文字
-・ 詳細説明をここに記載します。
-・ #channel_name
-
-2. *次のニュースタイトル* 絵文字
-・ 詳細説明をここに記載します。
-・ #channel_name
-
-【番外編】
-
-1. *ニュースタイトル* 絵文字
-・ 詳細説明をここに記載します。
-・ #channel_name
-
-#Slackメッセージ
-Slackメッセージはある会社内でやり取りされた1週間分のメッセージです。各メッセージには投稿者名が[名前]の形式で含まれています。
-"""
-            
-            response = self.openai_client.chat.completions.create(
-                model="gpt-5.5",
-                messages=[
-                    {"role": "system", "content": "あなたは社内コミュニケーションの専門家です。Slackメッセージから重要な情報を抽出し、わかりやすくまとめることが得意です。"},
-                    {"role": "user", "content": prompt + messages_text}
-                ],
-                max_completion_tokens=15000
+            summary = self.provider.generate(
+                self.config.system_prompt,
+                instruction + "\n" + messages_text,
             )
-            
-            summary = response.choices[0].message.content
             self._log("✅ ニュースサマリー生成完了")
             return summary
             
+        except LLMError as e:
+            print(f"❌ LLMエラー: {e}", file=sys.stderr)
+            return None
         except Exception as e:
-            print(f"❌ OpenAI APIエラー: {str(e)}", file=sys.stderr)
+            print(f"❌ LLMエラー: {str(e)}", file=sys.stderr)
             return None
     
 
@@ -202,24 +172,40 @@ def main():
   python generate_weekly_news.py
   python generate_weekly_news.py --days 7
   python generate_weekly_news.py --messages-file slack_messages_20250928.json
+  python generate_weekly_news.py --provider claude --model sonnet
   python generate_weekly_news.py -v  # 詳細ログを表示
         """
     )
     
     parser.add_argument('--messages-file', type=str, help='メッセージファイルのパス（デフォルト: 最新のslack_messages_*.json）')
-    parser.add_argument('--days', type=int, default=7, help='分析対象の日数（デフォルト: 7日）')
-    parser.add_argument('--openai-key', type=str, help='OpenAI APIキー（環境変数より優先）')
+    parser.add_argument('--days', type=int, default=None, help='分析対象の日数（デフォルト: config.toml）')
+    parser.add_argument('--openai-key', type=str, help='OpenAI APIキー（非推奨: provider=api を強制）')
+    parser.add_argument('--provider', type=str, help='LLMプロバイダ (api|codex|claude|opencode)')
+    parser.add_argument('--model', type=str, help='モデル名')
+    parser.add_argument('--config', type=str, help='config.toml のパス')
     parser.add_argument('-v', '--verbose', action='store_true', help='詳細なログを出力する')
     
     args = parser.parse_args()
-    
-    openai_key = args.openai_key or os.environ.get('OPENAI_API_KEY')
-    
-    if not openai_key:
-        print("❌ エラー: OPENAI_API_KEY が設定されていません", file=sys.stderr)
-        print("\n環境変数を設定してください:", file=sys.stderr)
-        print("export OPENAI_API_KEY='sk-...'", file=sys.stderr)
-        return 1
+
+    cfg = load_config(args.config)
+    if args.provider:
+        cfg.provider = args.provider
+    if args.model is not None:
+        cfg.model = args.model
+    if args.days is not None:
+        cfg.days = args.days
+
+    # Deprecated: --openai-key forces provider=api and injects the key
+    if args.openai_key:
+        cfg.provider = "api"
+        os.environ[cfg.api_key_env] = args.openai_key
+
+    if cfg.provider == "api":
+        if not os.environ.get(cfg.api_key_env):
+            print(f"❌ エラー: {cfg.api_key_env} が設定されていません", file=sys.stderr)
+            print("\n環境変数を設定してください:", file=sys.stderr)
+            print(f"export {cfg.api_key_env}='sk-...'", file=sys.stderr)
+            return 1
     
     if not args.messages_file:
         import glob
@@ -233,15 +219,22 @@ def main():
             print("先に collect_slack_messages.py を実行してください", file=sys.stderr)
             return 1
     
-    generator = WeeklyNewsGenerator(openai_key, verbose=args.verbose)
+    try:
+        provider = create_provider(cfg)
+    except LLMError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    generator = WeeklyNewsGenerator(provider, cfg, verbose=args.verbose)
     
     try:
         news_text = generator.generate_news_text(
             messages_file=args.messages_file,
-            days=args.days
+            days=cfg.days
         )
         
         if news_text:
+            print(news_text)
             if args.verbose:
                 print("✅ ニューステキストの生成が完了しました")
             return 0
