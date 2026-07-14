@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "newsai-dashboard",
+  "main": "src/index.tsx",
+  "compatibility_date": "2026-07-01",
+  "vars": {
+    "REPO_OWNER": "nyoshida-dev",
+    "REPO_NAME": "newsai",
+    "WORKFLOW_FILE": "weekly-news.yml",
+    "CONFIG_PATH": "config.toml"
+  }
+}
