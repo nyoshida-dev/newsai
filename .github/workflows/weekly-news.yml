@@ -26,28 +26,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      LLM_PROVIDER: ${{ inputs.provider || vars.LLM_PROVIDER || 'api' }}
+      # 空なら config.toml の [llm].provider が使われる（優先順位: input > repo var > config.toml）
+      LLM_PROVIDER: ${{ inputs.provider || vars.LLM_PROVIDER || '' }}
       LLM_MODEL: ${{ vars.LLM_MODEL }}
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
       SLACK_EXCLUDE_CHANNELS: ${{ secrets.SLACK_EXCLUDE_CHANNELS }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve effective provider
+        run: |
+          EFFECTIVE=$(python3 -c 'import os,pathlib,tomllib
+          p=os.environ.get("LLM_PROVIDER") or ""
+          if not p:
+              cfg=pathlib.Path("config.toml")
+              if cfg.is_file():
+                  p=str(tomllib.load(cfg.open("rb")).get("llm",{}).get("provider",""))
+          print(p or "api")')
+          echo "EFFECTIVE_PROVIDER=$EFFECTIVE" >> "$GITHUB_ENV"
+          echo "実効プロバイダ: $EFFECTIVE"
+
       - uses: astral-sh/setup-uv@v3
       - run: uv python install 3.13
       - run: uv sync --frozen
 
       - name: Setup Node 22 (CLI providers)
-        if: env.LLM_PROVIDER != 'api'
+        if: env.EFFECTIVE_PROVIDER != 'api'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Install Codex CLI
-        if: env.LLM_PROVIDER == 'codex'
+        if: env.EFFECTIVE_PROVIDER == 'codex'
         run: npm install -g @openai/codex
       - name: Seed Codex auth (ChatGPT subscription)
-        if: env.LLM_PROVIDER == 'codex'
+        if: env.EFFECTIVE_PROVIDER == 'codex'
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
         run: |
@@ -56,14 +70,14 @@ jobs:
           chmod 600 ~/.codex/auth.json
 
       - name: Install Claude Code CLI
-        if: env.LLM_PROVIDER == 'claude'
+        if: env.EFFECTIVE_PROVIDER == 'claude'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Install opencode
-        if: env.LLM_PROVIDER == 'opencode'
+        if: env.EFFECTIVE_PROVIDER == 'opencode'
         run: npm install -g opencode-ai
       - name: Seed opencode auth
-        if: env.LLM_PROVIDER == 'opencode'
+        if: env.EFFECTIVE_PROVIDER == 'opencode'
         env:
           OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
         run: |
