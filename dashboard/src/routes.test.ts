@@ -17,6 +17,9 @@ const ORIGIN = 'http://localhost'
 const SHA_V1 = 'sha-v1-aaaaaaaa'
 const SHA_V2 = 'sha-v2-bbbbbbbb'
 const SHA_FRESH = 'sha-fresh-cccccc'
+const SHA_WF = 'sha-workflow-dddd'
+
+const WORKFLOW_PATH = '.github/workflows/weekly-news.yml'
 
 const PROMPT_JP = `#指示
 以下のWeb/Xニュースから重要な情報を抽出してください。
@@ -54,6 +57,26 @@ max_items_per_feed = 20
 [post]
 channel = "general"
 header = "📰 今週のAIニュース"
+
+[schedule]
+frequency = "weekly"
+weekday = "friday"
+hour = 18
+timezone = "Asia/Tokyo"
+`
+}
+
+function workflowYaml(cron = '0 9 * * 5'): string {
+  return `name: AI News
+on:
+  schedule:
+    - cron: "${cron}"
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
 `
 }
 
@@ -76,11 +99,17 @@ type FetchCall = { url: string; method: string; body?: string }
 function stubGitHub(opts: {
   content: string
   sha: string
+  workflowContent?: string
+  workflowSha?: string
   onPut?: (toml: string) => void
+  onWorkflowPut?: (yml: string) => void
+  workflowPutStatus?: number
 }): { calls: FetchCall[] } {
   const calls: FetchCall[] = []
   let content = opts.content
   let sha = opts.sha
+  let workflowContent = opts.workflowContent ?? workflowYaml()
+  let workflowSha = opts.workflowSha ?? SHA_WF
 
   vi.stubGlobal(
     'fetch',
@@ -108,6 +137,46 @@ function stubGitHub(opts: {
         content = toml
         sha = SHA_V2
         return new Response(JSON.stringify({ content: { sha } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (
+        url.includes(`/contents/${WORKFLOW_PATH}`) &&
+        method === 'GET'
+      ) {
+        return new Response(
+          JSON.stringify({
+            content: toGitHubB64(workflowContent),
+            encoding: 'base64',
+            sha: workflowSha,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (
+        url.includes(`/contents/${WORKFLOW_PATH}`) &&
+        method === 'PUT'
+      ) {
+        const status = opts.workflowPutStatus ?? 200
+        if (status !== 200) {
+          return new Response(
+            JSON.stringify({
+              message: 'Resource not accessible by integration',
+              documentation_url:
+                'https://docs.github.com/rest/overview/authenticating-to-the-rest-api#github-app-installation-access-tokens-and-workflow-scope',
+            }),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        const parsed = JSON.parse(body!) as { content: string; sha: string }
+        const yml = fromGitHubB64(parsed.content)
+        opts.onWorkflowPut?.(yml)
+        workflowContent = yml
+        workflowSha = 'sha-wf-new'
+        return new Response(JSON.stringify({ content: { sha: workflowSha } }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -150,6 +219,21 @@ function formBody(fields: Record<string, string>): URLSearchParams {
   return new URLSearchParams(fields)
 }
 
+const BASE_SETTINGS = {
+  provider: 'codex',
+  model: '',
+  days: '7',
+  source: 'web',
+  channel_filter: '',
+  exclude_channels: '',
+  web_mode: 'llm_search',
+  web_queries: 'AI 最新ニュース',
+  web_feeds: '',
+  system: 'あなたはAIニュースの専門家です。',
+  channel: 'general',
+  header: '📰 今週のAIニュース',
+}
+
 describe('routes', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
@@ -179,11 +263,15 @@ describe('routes', () => {
 
   it('POST /settings commits Japanese text and redirects; GET shows updated form', async () => {
     let putToml = ''
+    let putWorkflow = ''
     const gh = stubGitHub({
       content: tomlWithPrompt(PROMPT_JP, 'codex'),
       sha: SHA_V1,
       onPut: (toml) => {
         putToml = toml
+      },
+      onWorkflowPut: (yml) => {
+        putWorkflow = yml
       },
     })
     const cookie = await sessionCookie()
@@ -198,23 +286,12 @@ describe('routes', () => {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: formBody({
+          ...BASE_SETTINGS,
           sha: SHA_V1,
-          provider: 'codex',
-          model: '',
           frequency: 'daily',
           weekday: 'wednesday',
           hour: '9',
-          days: '7',
-          source: 'web',
-          channel_filter: '',
-          exclude_channels: '',
-          web_mode: 'llm_search',
-          web_queries: 'AI 最新ニュース',
-          web_feeds: '',
-          system: 'あなたはAIニュースの専門家です。',
           instruction: PROMPT_JP_NEW,
-          channel: 'general',
-          header: '📰 今週のAIニュース',
         }),
       },
       ENV,
@@ -228,10 +305,16 @@ describe('routes', () => {
     expect(putToml).toContain('frequency = "daily"')
     expect(putToml).toContain('weekday = "wednesday"')
     expect(putToml).toContain('hour = 9')
-    const putCall = gh.calls.find(
+
+    const puts = gh.calls.filter(
       (c) => c.method === 'PUT' && c.url.includes('/contents/'),
     )
-    expect(putCall).toBeTruthy()
+    expect(puts).toHaveLength(2)
+    expect(puts[1]!.url).toContain(WORKFLOW_PATH)
+    expect(putWorkflow).toContain('cron: "0 0 * * *"')
+    const wfBody = JSON.parse(puts[1]!.body!) as { content: string; message: string }
+    expect(fromGitHubB64(wfBody.content)).toContain('0 0 * * *')
+    expect(wfBody.message).toContain('by tester')
 
     const get = await app.request(
       `${ORIGIN}/?saved=1`,
@@ -245,6 +328,85 @@ describe('routes', () => {
     expect(html).toContain('保存後の新しいプロンプトです')
     expect(html).toContain('【番外編】も出力してください')
     expect(html).not.toContain('【注目ニュース】を作成します')
+  })
+
+  it('POST /settings skips workflow PUT when cron is unchanged', async () => {
+    const gh = stubGitHub({
+      content: tomlWithPrompt(PROMPT_JP, 'codex'),
+      sha: SHA_V1,
+      workflowContent: workflowYaml('0 9 * * 5'),
+    })
+    const cookie = await sessionCookie()
+
+    const post = await app.request(
+      `${ORIGIN}/settings`,
+      {
+        method: 'POST',
+        headers: {
+          Cookie: cookie,
+          Origin: ORIGIN,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formBody({
+          ...BASE_SETTINGS,
+          sha: SHA_V1,
+          frequency: 'weekly',
+          weekday: 'friday',
+          hour: '18',
+          instruction: PROMPT_JP,
+        }),
+      },
+      ENV,
+    )
+
+    expect(post.status).toBe(303)
+    const puts = gh.calls.filter(
+      (c) => c.method === 'PUT' && c.url.includes('/contents/'),
+    )
+    expect(puts).toHaveLength(1)
+    expect(puts[0]!.url).toContain('config.toml')
+    expect(
+      gh.calls.some(
+        (c) => c.method === 'PUT' && c.url.includes(WORKFLOW_PATH),
+      ),
+    ).toBe(false)
+  })
+
+  it('POST /settings with workflow PUT 403 shows re-login error', async () => {
+    stubGitHub({
+      content: tomlWithPrompt(PROMPT_JP, 'codex'),
+      sha: SHA_V1,
+      workflowPutStatus: 403,
+    })
+    const cookie = await sessionCookie()
+
+    const res = await app.request(
+      `${ORIGIN}/settings`,
+      {
+        method: 'POST',
+        headers: {
+          Cookie: cookie,
+          Origin: ORIGIN,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formBody({
+          ...BASE_SETTINGS,
+          sha: SHA_V1,
+          frequency: 'daily',
+          weekday: 'wednesday',
+          hour: '9',
+          instruction: PROMPT_JP_NEW,
+        }),
+      },
+      ENV,
+    )
+
+    expect(res.status).toBe(403)
+    const html = await res.text()
+    expect(html).toContain('workflow スコープがありません')
+    expect(html).toContain('config.toml 自体は保存済み')
+    expect(html).toContain('action="/logout"')
+    expect(html).toContain('ログアウト')
   })
 
   it('POST /settings with stale sha returns 409 with fresh form values', async () => {

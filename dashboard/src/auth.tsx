@@ -26,7 +26,7 @@ export async function loginHandler(c: Context<Env>): Promise<Response> {
   const params = new URLSearchParams({
     client_id: c.env.GITHUB_CLIENT_ID,
     redirect_uri: `${origin}/auth/callback`,
-    scope: 'repo',
+    scope: 'repo workflow',
     state,
   })
   return c.redirect(

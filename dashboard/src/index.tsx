@@ -24,6 +24,7 @@ import {
   listWorkflowRuns,
   putConfigFile,
 } from './github'
+import { computeCron } from './schedule'
 import {
   clearSessionCookie,
   getSessionCookie,
@@ -161,7 +162,12 @@ app.get('/', requireSession, async (c) => {
 
 app.post('/settings', requireSession, async (c) => {
   const session = c.get('session')
-  const { REPO_OWNER: owner, REPO_NAME: repo, CONFIG_PATH } = c.env
+  const {
+    REPO_OWNER: owner,
+    REPO_NAME: repo,
+    CONFIG_PATH,
+    WORKFLOW_FILE,
+  } = c.env
   const form = await c.req.formData()
   const submittedSha = String(form.get('sha') ?? '')
   const fields = formRecord(form)
@@ -207,6 +213,69 @@ app.post('/settings', requireSession, async (c) => {
         )
       }
       throw e
+    }
+
+    const frequency = (fields.frequency === 'daily' ? 'daily' : 'weekly') as
+      | 'daily'
+      | 'weekly'
+    const timezone =
+      typeof config.schedule?.timezone === 'string' &&
+      config.schedule.timezone.length > 0
+        ? config.schedule.timezone
+        : 'Asia/Tokyo'
+    const cron = computeCron(
+      frequency,
+      fields.weekday,
+      Number.parseInt(fields.hour, 10),
+      timezone,
+    )
+
+    const workflowPath = `.github/workflows/${WORKFLOW_FILE}`
+    const workflowFile = await getConfigFile(
+      session.t,
+      owner,
+      repo,
+      workflowPath,
+    )
+
+    const cronRe = /^(\s*-\s*cron:\s*)"[^"]*"/m
+    if (!cronRe.test(workflowFile.content)) {
+      return c.html(
+        <ErrorPage
+          message="workflow の cron 行が見つかりませんでした（設定 config.toml 自体は保存済みです）"
+          user={session.u}
+        />,
+        500,
+      )
+    }
+    const updatedWorkflow = workflowFile.content.replace(
+      cronRe,
+      `$1"${cron}"`,
+    )
+    if (updatedWorkflow !== workflowFile.content) {
+      try {
+        await putConfigFile(session.t, owner, repo, workflowPath, {
+          message: `chore: update schedule cron via dashboard (by ${session.u})`,
+          content: updatedWorkflow,
+          sha: workflowFile.sha,
+          branch: repoInfo.default_branch,
+        })
+      } catch (e) {
+        if (
+          e instanceof GitHubError &&
+          (e.status === 403 || e.status === 404)
+        ) {
+          return c.html(
+            <ErrorPage
+              message="workflow スコープがありません。一度ログアウトして再ログインしてください（設定 config.toml 自体は保存済みです）"
+              user={session.u}
+              logout
+            />,
+            403,
+          )
+        }
+        throw e
+      }
     }
 
     return c.redirect('/?saved=1', 303)

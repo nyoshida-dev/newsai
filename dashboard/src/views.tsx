@@ -321,14 +321,22 @@ export function ErrorPage(props: {
   title?: string
   message: string
   user?: string
+  /** Show an explicit logout form (e.g. missing workflow OAuth scope). */
+  logout?: boolean
 }) {
   return (
     <Layout title={props.title ?? 'エラー — newsai'} user={props.user}>
       <h1>{props.title ?? 'エラー'}</h1>
       <div class="err">{props.message}</div>
-      <p>
-        <a href="/">トップに戻る</a>
-      </p>
+      {props.logout ? (
+        <form method="post" action="/logout" class="actions">
+          <button type="submit">ログアウト</button>
+        </form>
+      ) : (
+        <p>
+          <a href="/">トップに戻る</a>
+        </p>
+      )}
     </Layout>
   )
 }
