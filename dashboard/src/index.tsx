@@ -12,6 +12,7 @@ import {
   formValuesFromConfig,
   parseConfig,
   serializeConfig,
+  validateWebFeeds,
 } from './config'
 import type { Env } from './env'
 import {
@@ -45,8 +46,12 @@ const FORM_KEYS = [
   'provider',
   'model',
   'days',
+  'source',
   'channel_filter',
   'exclude_channels',
+  'web_mode',
+  'web_queries',
+  'web_feeds',
   'system',
   'instruction',
   'channel',
@@ -155,6 +160,12 @@ app.post('/settings', requireSession, async (c) => {
   const { REPO_OWNER: owner, REPO_NAME: repo, CONFIG_PATH } = c.env
   const form = await c.req.formData()
   const submittedSha = String(form.get('sha') ?? '')
+  const fields = formRecord(form)
+
+  const feedErr = validateWebFeeds(fields.web_feeds)
+  if (feedErr) {
+    return c.html(<ErrorPage message={feedErr} user={session.u} />, 400)
+  }
 
   try {
     const current = await getConfigFile(session.t, owner, repo, CONFIG_PATH)
@@ -166,7 +177,7 @@ app.post('/settings', requireSession, async (c) => {
       )
     }
 
-    const config = applyForm(parseConfig(current.content), formRecord(form))
+    const config = applyForm(parseConfig(current.content), fields)
     const serialized = serializeConfig(config)
     const repoInfo = await getRepo(session.t, owner, repo)
 

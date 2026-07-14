@@ -7,7 +7,7 @@ export function parseConfig(tomlText: string): Record<string, any> {
   return parseToml(tomlText) as Record<string, any>
 }
 
-/** Deep-clone cfg and overwrite the 9 dashboard form paths. */
+/** Deep-clone cfg and overwrite the dashboard form paths. */
 export function applyForm(
   cfg: Record<string, any>,
   form: Record<string, string>,
@@ -18,6 +18,7 @@ export function applyForm(
   if (!isPlainObject(out.collect)) out.collect = {}
   if (!isPlainObject(out.prompt)) out.prompt = {}
   if (!isPlainObject(out.post)) out.post = {}
+  if (!isPlainObject(out.collect.web)) out.collect.web = {}
 
   out.llm.provider = form.provider ?? ''
   out.llm.model = form.model ?? ''
@@ -25,11 +26,16 @@ export function applyForm(
   const daysRaw = Number.parseInt(form.days ?? '', 10)
   const days = Number.isFinite(daysRaw) ? daysRaw : 1
   out.collect.days = Math.min(90, Math.max(1, days))
+  out.collect.source = form.source ?? ''
   out.collect.channel_filter = form.channel_filter ?? ''
   out.collect.exclude_channels = (form.exclude_channels ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
+
+  out.collect.web.mode = form.web_mode ?? ''
+  out.collect.web.queries = linesToArray(form.web_queries ?? '')
+  out.collect.web.feeds = linesToArray(form.web_feeds ?? '')
 
   out.prompt.system = normalizeNewlines(form.system ?? '')
   out.prompt.instruction = normalizeNewlines(form.instruction ?? '')
@@ -40,12 +46,27 @@ export function applyForm(
   return out
 }
 
+/** Return an error message if any feed URL is invalid; null if OK. */
+export function validateWebFeeds(feedsText: string): string | null {
+  const feeds = linesToArray(feedsText)
+  for (const url of feeds) {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return `フィードURLは http:// または https:// で始まる必要があります: ${url}`
+    }
+  }
+  return null
+}
+
 export type FormValues = {
   provider: string
   model: string
   days: number
+  source: string
   channel_filter: string
   exclude_channels: string
+  web_mode: string
+  web_queries: string
+  web_feeds: string
   system: string
   instruction: string
   channel: string
@@ -56,16 +77,23 @@ export function formValuesFromConfig(cfg: Record<string, any>): FormValues {
   const llm = isPlainObject(cfg.llm) ? cfg.llm : {}
   const prompt = isPlainObject(cfg.prompt) ? cfg.prompt : {}
   const collect = isPlainObject(cfg.collect) ? cfg.collect : {}
+  const web = isPlainObject(collect.web) ? collect.web : {}
   const post = isPlainObject(cfg.post) ? cfg.post : {}
   const exclude = collect.exclude_channels
+  const queries = web.queries
+  const feeds = web.feeds
   return {
     provider: String(llm.provider ?? 'api'),
     model: String(llm.model ?? ''),
     days: typeof collect.days === 'number' ? collect.days : 7,
+    source: String(collect.source ?? 'web'),
     channel_filter: String(collect.channel_filter ?? ''),
     exclude_channels: Array.isArray(exclude)
       ? exclude.map(String).join(', ')
       : '',
+    web_mode: String(web.mode ?? 'llm_search'),
+    web_queries: Array.isArray(queries) ? queries.map(String).join('\n') : '',
+    web_feeds: Array.isArray(feeds) ? feeds.map(String).join('\n') : '',
     system: String(prompt.system ?? ''),
     instruction: String(prompt.instruction ?? ''),
     channel: String(post.channel ?? ''),
@@ -186,4 +214,11 @@ function escapeBasic(s: string): string {
 
 function normalizeNewlines(s: string): string {
   return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function linesToArray(s: string): string[] {
+  return normalizeNewlines(s)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
 }

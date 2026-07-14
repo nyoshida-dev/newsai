@@ -85,7 +85,7 @@ function SettingsForm(props: { values: FormValues; sha: string }) {
       <label for="model">モデル</label>
       <input id="model" name="model" type="text" value={v.model} />
 
-      <label for="days">収集日数</label>
+      <label for="days">収集対象日数</label>
       <input
         id="days"
         name="days"
@@ -95,6 +95,37 @@ function SettingsForm(props: { values: FormValues; sha: string }) {
         value={String(v.days)}
       />
 
+      <label for="source">収集ソース</label>
+      <select id="source" name="source">
+        <option value="web" selected={v.source === 'web'}>
+          Web/Xニュース収集
+        </option>
+        <option value="slack" selected={v.source === 'slack'}>
+          Slackメッセージ収集
+        </option>
+      </select>
+
+      <h2>Web収集設定（source=webのみ）</h2>
+      <label for="web_mode">Web収集モード</label>
+      <select id="web_mode" name="web_mode">
+        <option value="llm_search" selected={v.web_mode === 'llm_search'}>
+          LLMがWeb/Xを検索
+        </option>
+        <option value="feeds" selected={v.web_mode === 'feeds'}>
+          RSSフィード
+        </option>
+        <option value="hybrid" selected={v.web_mode === 'hybrid'}>
+          hybrid
+        </option>
+      </select>
+
+      <label for="web_queries">検索トピック（1行1トピック）</label>
+      <textarea id="web_queries" name="web_queries" rows={3}>{v.web_queries}</textarea>
+
+      <label for="web_feeds">RSSフィードURL（1行1URL）</label>
+      <textarea id="web_feeds" name="web_feeds" rows={3}>{v.web_feeds}</textarea>
+
+      <h2>Slack収集設定（source=slackのみ）</h2>
       <label for="channel_filter">チャンネルフィルタ</label>
       <input
         id="channel_filter"
