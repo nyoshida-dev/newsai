@@ -28,6 +28,19 @@ Repository variable:
 - **provider** — override `LLM_PROVIDER` for a single run (`""` / `api` / `codex` / `claude` / `opencode`)
 - **dry_run** — generate but do not post to Slack (`--dry-run`; the digest is printed into Actions logs)
 
+### Schedule
+
+GitHub Actions fires hourly (`cron: "0 * * * *"`). A cheap gate job reads `[schedule]` from `config.toml` and skips the pipeline unless the current hour (in the configured timezone) matches. Manual `workflow_dispatch` always runs (bypasses the gate).
+
+| Key | Description |
+|---|---|
+| `frequency` | `daily` or `weekly` |
+| `weekday` | `monday`..`sunday` (used when `frequency = "weekly"`) |
+| `hour` | Delivery hour `0`–`23` in `timezone` |
+| `timezone` | IANA name (default `Asia/Tokyo`) |
+
+Defaults preserve Friday 18:00 JST. Change the schedule by editing `[schedule]` in `config.toml` (or via the dashboard). GitHub cron can delay several minutes within the hour (rarely past it — a delivery could be skipped that hour).
+
 **Auth caveats:** Claude `setup-token` is the officially supported CI path. Codex `auth.json` in CI is positioned for trusted private automation (OpenAI recommends API keys for production). opencode subscription OAuth in CI is a gray zone — use at your own risk. Codex / opencode refresh tokens may rotate — re-seed the secret when auth fails. Never cache `auth.json` in `actions/cache`. `--dry-run` prints the digest into Actions logs.
 
 **X / Twitter:** coverage comes from the LLM’s built-in web search (CLI providers). No X API key is required.
@@ -119,6 +132,10 @@ Precedence (highest first): **CLI args > env vars > config.toml > built-in defau
 | `[post]` | `channel` | Default post channel (`SLACK_CHANNEL` env wins when set) |
 | `[post]` | `thread` | Post long text as a thread |
 | `[post]` | `header` | Custom header prefix (empty = default weekly title) |
+| `[schedule]` | `frequency` | `daily` \| `weekly` |
+| `[schedule]` | `weekday` | `monday`..`sunday` (weekly only) |
+| `[schedule]` | `hour` | Delivery hour `0`–`23` in `timezone` |
+| `[schedule]` | `timezone` | IANA timezone name |
 
 ### LLM smoke test
 ```bash

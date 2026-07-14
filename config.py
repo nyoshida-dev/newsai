@@ -86,6 +86,11 @@ class Config:
     channel: str = ""  # SLACK_CHANNEL env takes precedence when set
     thread: bool = True
     header: str = ""
+    # [schedule]
+    frequency: str = "weekly"  # daily | weekly
+    weekday: str = "friday"  # monday..sunday (weekly only)
+    hour: int = 18  # 0-23, in `timezone`
+    timezone: str = "Asia/Tokyo"  # IANA name
 
 
 def _as_list(value: Any) -> list[str]:
@@ -115,6 +120,7 @@ def _apply_toml(cfg: Config, data: dict[str, Any]) -> Config:
     prompt = data.get("prompt") or {}
     collect = data.get("collect") or {}
     post = data.get("post") or {}
+    schedule = data.get("schedule") or {}
 
     updates: dict[str, Any] = {}
 
@@ -171,6 +177,15 @@ def _apply_toml(cfg: Config, data: dict[str, Any]) -> Config:
         updates["thread"] = bool(post["thread"])
     if "header" in post:
         updates["header"] = str(post["header"])
+
+    if "frequency" in schedule:
+        updates["frequency"] = str(schedule["frequency"])
+    if "weekday" in schedule:
+        updates["weekday"] = str(schedule["weekday"])
+    if "hour" in schedule:
+        updates["hour"] = int(schedule["hour"])
+    if "timezone" in schedule:
+        updates["timezone"] = str(schedule["timezone"])
 
     return replace(cfg, **updates) if updates else cfg
 

@@ -102,3 +102,14 @@ channel = ""
 thread = true
 # ヘッダー接頭辞
 header = "📰 今週のAIニュース"
+
+[schedule]
+# 配信頻度: daily | weekly
+frequency = "weekly"
+# weekly のときに使用（monday..sunday）
+weekday = "friday"
+# 配信時刻（0-23、timezone基準）
+hour = 18
+# IANA タイムゾーン名
+timezone = "Asia/Tokyo"
+

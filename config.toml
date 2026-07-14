@@ -69,3 +69,10 @@ max_items_per_feed = 20
 channel = ""
 thread = true
 header = "📰 今週のAIニュース"
+
+[schedule]
+frequency = "weekly"
+weekday = "friday"
+hour = 18
+timezone = "Asia/Tokyo"
+
