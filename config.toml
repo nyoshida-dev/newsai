@@ -9,6 +9,11 @@ max_completion_tokens = 15000
 timeout_seconds = 600
 extra_cli_args = []
 
+[llm.opencode]
+base_url = ""
+npm = "@ai-sdk/openai-compatible"
+provider_id = "custom"
+
 [prompt]
 system = """
 あなたはAIに関する最新情報をリサーチする専門家です。
@@ -52,7 +57,7 @@ instruction_file = ""
 
 [collect]
 source = "web"
-days = 7
+days = 2
 channel_filter = ""
 exclude_channels = []
 max_messages_per_channel = 100
@@ -71,7 +76,7 @@ thread = true
 header = "📰 今週のAIニュース"
 
 [schedule]
-frequency = "weekly"
+frequency = "daily"
 weekday = "monday"
 hour = 9
 timezone = "Asia/Tokyo"
