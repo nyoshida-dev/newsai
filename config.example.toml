@@ -4,8 +4,9 @@
 
 [llm]
 # 利用する LLM プロバイダ: api | codex | claude | opencode
-provider = "api"
-# モデル名。空文字の場合はプロバイダのデフォルト（api は gpt-5.5）
+# llm_search / hybrid モードでは CLI プロバイダ（codex / claude / opencode）が必要
+provider = "codex"
+# モデル名。空文字の場合はプロバイダのデフォルト（api は gpt-5.5、CLI は各ツール既定）
 model = ""
 # OpenAI 互換 API の base URL。空文字の場合は OpenAI 公式エンドポイント
 base_url = ""
@@ -20,51 +21,51 @@ extra_cli_args = []
 
 [prompt]
 # システムプロンプト
-system = "あなたは社内コミュニケーションの専門家です。Slackメッセージから重要な情報を抽出し、わかりやすくまとめることが得意です。"
-# ユーザー指示プロンプト（メッセージ本文の直前に付与される）
-instruction = """#指示
-以下のSlackメッセージから、「話題のニュース」として取り上げるのに良さそうなものをピックアップして「今週の注目ニュース」として取り上げるのにふさわしいものをピックアップしてください。
+system = """
+あなたはAIに関する最新情報をリサーチする専門家です。
+WebおよびXから最新の正しいAIニュースを収集し、重要な情報を抽出し、わかりやすくまとめることを得意としています。"""
+# ユーザー指示プロンプト
+instruction = """
+#指示
+収集した最新のAIニュースから、「話題のニュース」として取り上げるのに良さそうなものをピックアップして「今週の注目ニュース」として取り上げるのにふさわしいものをピックアップしてください。
 
 - 上位10件の「今週の注目ニュース」を選んでください。
-- 外部のニュースは取り上げないでください。
-- もし重要なニュースが見つからない場合は、「今週は特に重要なニュースはありませんでした」と返してください。
-- ネガティブなニュースは取り上げないでください。
-- 番外編として、ユーモアのあるニュースを5件選んでください。
+- 番外編は2〜5件選んでください。
 - 出力結果には【注目ニュース】と【番外編】の2つのセクションを作成してください。
+- システム開発および業務自動化のニュースは特に重要視してください。
+- 事実確認できない噂は除外してください。
+- 各ニュースの最後に出典URLを1行で記載してください（・ 出典: <URL>）。
 - 出力結果には枕詞や最後のコメントは含めないでください。
 
 #出力形式
 - 各ニュースの間には必ず空行を1行入れてください。
 - ニュースタイトル。タイトルの先頭にニュースの番号を付けてください。ニュースの最後にはタイトルに対応する絵文字を付けてください。ニュースタイトルは*で囲んでください。
 - 詳細説明（1-2文）。200字以内程度。
-- 最後の行に、チャンネル名を記載してください。チャンネル名は必ず行頭に#から始めてください（Slackがリンクとして認識するため）。
+- 最後の行に出典URLを記載してください。
 
 例：
 【注目ニュース】
 
 1. *ニュースタイトル* 絵文字
 ・ 詳細説明をここに記載します。
-・ #channel_name
-
-2. *次のニュースタイトル* 絵文字
-・ 詳細説明をここに記載します。
-・ #channel_name
+・ 出典: https://example.com/article
 
 【番外編】
 
 1. *ニュースタイトル* 絵文字
 ・ 詳細説明をここに記載します。
-・ #channel_name
-
-#Slackメッセージ
-Slackメッセージはある会社内でやり取りされた1週間分のメッセージです。各メッセージには投稿者名が[名前]の形式で含まれています。
+・ 出典: https://example.com/extra
 """
 # 指定時はこのファイル内容で instruction を上書きする
 instruction_file = ""
 
 [collect]
+# 収集ソース: web（既定）| slack
+# 環境変数 NEWSAI_SOURCE で上書き可能
+source = "web"
 # 収集対象の日数
 days = 7
+# --- 以下は source = "slack" のとき使用 ---
 # チャンネル名フィルタ（部分一致）。空文字で全チャンネル
 channel_filter = ""
 # 除外チャンネル名のリスト（SLACK_EXCLUDE_CHANNELS 環境変数と union）
@@ -76,10 +77,28 @@ max_message_chars = 500
 # 未参加の公開チャンネルへ自動参加するか
 auto_join = true
 
+[collect.web]
+# 収集モード: llm_search（LLMがWeb検索）| feeds（RSSのみ）| hybrid（両方）
+# llm_search / hybrid は provider=api 非対応（feeds を使うか CLI プロバイダへ）
+mode = "llm_search"
+# llm_search / hybrid で LLM に渡す検索トピック
+queries = ["AI 最新ニュース", "LLM 新モデル リリース", "生成AI 業務自動化"]
+# RSS/Atom フィード URL（feeds / hybrid で使用）。例:
+# feeds = [
+#   "https://openai.com/blog/rss.xml",
+#   "https://www.anthropic.com/news/rss.xml",
+#   "https://blog.google/technology/ai/rss/",
+#   "https://hnrss.org/newest?q=AI",
+#   "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",
+# ]
+feeds = []
+# フィードあたりの最大取得件数
+max_items_per_feed = 20
+
 [post]
 # 投稿先チャンネル。SLACK_CHANNEL 環境変数が設定されていればそちらを優先
 channel = ""
 # 長文をスレッドに分割投稿するか
 thread = true
-# ヘッダー接頭辞。空文字の場合はデフォルト（📰 今週の社内ニュース - …）
-header = ""
+# ヘッダー接頭辞
+header = "📰 今週のAIニュース"

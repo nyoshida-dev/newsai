@@ -16,7 +16,9 @@ class LLMError(RuntimeError):
 
 
 class LLMProvider:
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, *, web_search: bool = False
+    ) -> str:
         raise NotImplementedError
 
 
@@ -41,7 +43,14 @@ class OpenAICompatibleProvider(LLMProvider):
         self.model = cfg.model or "gpt-5.5"
         self.max_completion_tokens = cfg.max_completion_tokens
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, *, web_search: bool = False
+    ) -> str:
+        if web_search:
+            raise LLMError(
+                "❌ provider=api は Web検索モード（llm_search/hybrid）に対応していません。"
+                '[collect.web].mode = "feeds" を使うか、CLI プロバイダに変更してください'
+            )
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -101,7 +110,9 @@ class CodexProvider(CLIProviderBase):
     def __init__(self, cfg: Config):
         super().__init__(cfg, "codex")
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, *, web_search: bool = False
+    ) -> str:
         argv = [
             "codex",
             "exec",
@@ -110,6 +121,10 @@ class CodexProvider(CLIProviderBase):
             "read-only",
             "--ephemeral",
         ]
+        # codex exec does not accept top-level --search; use config override.
+        # Documented values: live | indexed | cached | disabled
+        if web_search:
+            argv.extend(["-c", 'web_search="live"'])
         if self.model:
             argv.extend(["-m", self.model])
         argv.extend(self.extra_cli_args)
@@ -122,14 +137,17 @@ class ClaudeCodeProvider(CLIProviderBase):
     def __init__(self, cfg: Config):
         super().__init__(cfg, "claude")
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, *, web_search: bool = False
+    ) -> str:
+        tools = "WebSearch,WebFetch" if web_search else ""
         argv = [
             "claude",
             "-p",
             "--output-format",
             "json",
             "--tools",
-            "",
+            tools,
             "--no-session-persistence",
             "--system-prompt",
             system_prompt,
@@ -161,7 +179,11 @@ class OpencodeProvider(CLIProviderBase):
     def __init__(self, cfg: Config):
         super().__init__(cfg, "opencode")
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, *, web_search: bool = False
+    ) -> str:
+        # Default agent already has web tools; no restrict flag on `opencode run`.
+        _ = web_search
         argv = ["opencode", "run"]
         if self.model:
             argv.extend(["-m", self.model])

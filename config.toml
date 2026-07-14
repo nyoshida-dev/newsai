@@ -2,7 +2,7 @@
 
 [llm]
 provider = "codex"
-model = "gpt-5.6-sol"
+model = ""
 base_url = ""
 api_key_env = "OPENAI_API_KEY"
 max_completion_tokens = 15000
@@ -18,32 +18,40 @@ instruction = """
 収集した最新のAIニュースから、「話題のニュース」として取り上げるのに良さそうなものをピックアップして「今週の注目ニュース」として取り上げるのにふさわしいものをピックアップしてください。
 
 - 上位10件の「今週の注目ニュース」を選んでください。
+- 番外編は2〜5件選んでください。
 - 出力結果には【注目ニュース】と【番外編】の2つのセクションを作成してください。
 - システム開発および業務自動化のニュースは特に重要視してください。
+- 事実確認できない噂は除外してください。
+- 各ニュースの最後に出典URLを1行で記載してください（・ 出典: <URL>）。
 - 出力結果には枕詞や最後のコメントは含めないでください。
 
 #出力形式
 - 各ニュースの間には必ず空行を1行入れてください。
 - ニュースタイトル。タイトルの先頭にニュースの番号を付けてください。ニュースの最後にはタイトルに対応する絵文字を付けてください。ニュースタイトルは*で囲んでください。
 - 詳細説明（1-2文）。200字以内程度。
+- 最後の行に出典URLを記載してください。
 
 例：
 【注目ニュース】
 
 1. *ニュースタイトル* 絵文字
 ・ 詳細説明をここに記載します。
+・ 出典: https://example.com/article
 
 2. *次のニュースタイトル* 絵文字
 ・ 詳細説明をここに記載します。
+・ 出典: https://example.com/article2
 
 【番外編】
 
 1. *ニュースタイトル* 絵文字
 ・ 詳細説明をここに記載します。
+・ 出典: https://example.com/extra
 """
 instruction_file = ""
 
 [collect]
+source = "web"
 days = 7
 channel_filter = ""
 exclude_channels = []
@@ -51,7 +59,13 @@ max_messages_per_channel = 100
 max_message_chars = 500
 auto_join = true
 
+[collect.web]
+mode = "llm_search"
+queries = ["AI 最新ニュース", "LLM 新モデル リリース", "生成AI 業務自動化"]
+feeds = []
+max_items_per_feed = 20
+
 [post]
 channel = ""
 thread = true
-header = ""
+header = "📰 今週のAIニュース"

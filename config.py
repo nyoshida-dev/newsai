@@ -68,12 +68,20 @@ class Config:
     instruction_prompt: str = DEFAULT_INSTRUCTION_PROMPT
     instruction_file: str = ""  # if set, read file content and use instead of instruction_prompt
     # [collect]
+    source: str = "web"  # web | slack
     days: int = 7
     channel_filter: str = ""
     exclude_channels: list[str] = field(default_factory=list)
     max_messages_per_channel: int = 100
     max_message_chars: int = 500
     auto_join: bool = True
+    # [collect.web]
+    web_mode: str = "llm_search"  # llm_search | feeds | hybrid
+    web_queries: list[str] = field(
+        default_factory=lambda: ["AI 最新ニュース", "LLM リリース", "生成AI 活用事例"]
+    )
+    web_feeds: list[str] = field(default_factory=list)
+    web_max_items_per_feed: int = 20
     # [post]
     channel: str = ""  # SLACK_CHANNEL env takes precedence when set
     thread: bool = True
@@ -132,6 +140,8 @@ def _apply_toml(cfg: Config, data: dict[str, Any]) -> Config:
     if "instruction_file" in prompt:
         updates["instruction_file"] = str(prompt["instruction_file"])
 
+    if "source" in collect:
+        updates["source"] = str(collect["source"])
     if "days" in collect:
         updates["days"] = int(collect["days"])
     if "channel_filter" in collect:
@@ -144,6 +154,16 @@ def _apply_toml(cfg: Config, data: dict[str, Any]) -> Config:
         updates["max_message_chars"] = int(collect["max_message_chars"])
     if "auto_join" in collect:
         updates["auto_join"] = bool(collect["auto_join"])
+
+    web = collect.get("web") or {}
+    if "mode" in web:
+        updates["web_mode"] = str(web["mode"])
+    if "queries" in web:
+        updates["web_queries"] = _as_list(web["queries"])
+    if "feeds" in web:
+        updates["web_feeds"] = _as_list(web["feeds"])
+    if "max_items_per_feed" in web:
+        updates["web_max_items_per_feed"] = int(web["max_items_per_feed"])
 
     if "channel" in post:
         updates["channel"] = str(post["channel"])
@@ -165,6 +185,8 @@ def _apply_env(cfg: Config) -> Config:
         updates["base_url"] = v
     if (v := os.environ.get("LLM_TIMEOUT_SECONDS")) is not None and v != "":
         updates["timeout_seconds"] = int(v)
+    if (v := os.environ.get("NEWSAI_SOURCE")) is not None and v != "":
+        updates["source"] = v
     return replace(cfg, **updates) if updates else cfg
 
 
