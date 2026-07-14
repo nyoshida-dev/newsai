@@ -30,7 +30,7 @@ Repository variable:
 
 ### Schedule
 
-GitHub Actions fires hourly (`cron: "0 * * * *"`). A cheap gate job reads `[schedule]` from `config.toml` and skips the pipeline unless the current hour (in the configured timezone) matches. Manual `workflow_dispatch` always runs (bypasses the gate).
+配信スケジュールはダッシュボードの保存時に workflow の cron に反映される（ログインユーザーのトークンで commit）。`config.toml` の `[schedule]` を手で編集した場合は cron も手で合わせる必要がある。OAuth スコープは `repo workflow`。timezone の DST 注意（保存時点の UTC オフセットで固定計算）。
 
 | Key | Description |
 |---|---|
@@ -39,7 +39,7 @@ GitHub Actions fires hourly (`cron: "0 * * * *"`). A cheap gate job reads `[sche
 | `hour` | Delivery hour `0`–`23` in `timezone` |
 | `timezone` | IANA name (default `Asia/Tokyo`) |
 
-Defaults preserve Friday 18:00 JST. Change the schedule by editing `[schedule]` in `config.toml` (or via the dashboard). GitHub cron can delay several minutes within the hour (rarely past it — a delivery could be skipped that hour).
+Defaults preserve Friday 18:00 JST (`cron: "0 9 * * 5"`). Manual `workflow_dispatch` always runs.
 
 **Auth caveats:** Claude `setup-token` is the officially supported CI path. Codex `auth.json` in CI is positioned for trusted private automation (OpenAI recommends API keys for production). opencode subscription OAuth in CI is a gray zone — use at your own risk. Codex / opencode refresh tokens may rotate — re-seed the secret when auth fails. Never cache `auth.json` in `actions/cache`. `--dry-run` prints the digest into Actions logs.
 
@@ -218,6 +218,7 @@ A simple hosted dashboard (Cloudflare Workers) to edit config.toml, trigger runs
    npx wrangler secret put GITHUB_CLIENT_SECRET
    npx wrangler secret put SESSION_SECRET   # e.g. openssl rand -hex 32
 5. npx wrangler deploy
+OAuth scope requested: `repo workflow` (needed to commit the workflow cron on schedule save). After upgrading an existing deployment, re-login is required (orchestrator rotates `SESSION_SECRET` to invalidate old sessions).
 Anyone may log in with GitHub, but only users with push access to the repo can use the dashboard.
 Saving from the dashboard does not preserve comments in config.toml (see config.example.toml for the commented reference).
 If the repo is org-owned with OAuth App restrictions, approve the app for the org.
