@@ -12,6 +12,7 @@ import {
   formValuesFromConfig,
   parseConfig,
   serializeConfig,
+  validateSchedule,
   validateWebFeeds,
 } from './config'
 import type { Env } from './env'
@@ -45,6 +46,9 @@ const app = new Hono<Env>()
 const FORM_KEYS = [
   'provider',
   'model',
+  'frequency',
+  'weekday',
+  'hour',
   'days',
   'source',
   'channel_filter',
@@ -165,6 +169,11 @@ app.post('/settings', requireSession, async (c) => {
   const feedErr = validateWebFeeds(fields.web_feeds)
   if (feedErr) {
     return c.html(<ErrorPage message={feedErr} user={session.u} />, 400)
+  }
+
+  const scheduleErr = validateSchedule(fields)
+  if (scheduleErr) {
+    return c.html(<ErrorPage message={scheduleErr} user={session.u} />, 400)
   }
 
   try {

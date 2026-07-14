@@ -1,5 +1,22 @@
 import type { FormValues } from './config'
+import { SCHEDULE_FREQUENCIES, SCHEDULE_WEEKDAYS } from './config'
 import type { WorkflowRun } from './github'
+
+const WEEKDAY_LABELS: Record<(typeof SCHEDULE_WEEKDAYS)[number], string> = {
+  monday: '月曜日',
+  tuesday: '火曜日',
+  wednesday: '水曜日',
+  thursday: '木曜日',
+  friday: '金曜日',
+  saturday: '土曜日',
+  sunday: '日曜日',
+}
+
+const FREQUENCY_LABELS: Record<(typeof SCHEDULE_FREQUENCIES)[number], string> =
+  {
+    weekly: '毎週',
+    daily: '毎日',
+  }
 
 const CSS = `
 :root{--bg:#f7f6f3;--fg:#1a1a1a;--muted:#666;--border:#d8d5ce;--accent:#1f4b3a;--err:#8b1e1e;--flash:#e8f0eb}
@@ -84,6 +101,39 @@ function SettingsForm(props: { values: FormValues; sha: string }) {
 
       <label for="model">モデル</label>
       <input id="model" name="model" type="text" value={v.model} />
+
+      <h2>配信スケジュール</h2>
+      <label for="frequency">配信頻度</label>
+      <select id="frequency" name="frequency">
+        {SCHEDULE_FREQUENCIES.map((f) => (
+          <option value={f} selected={v.frequency === f}>
+            {FREQUENCY_LABELS[f]}
+          </option>
+        ))}
+      </select>
+
+      <label for="weekday">曜日</label>
+      <select id="weekday" name="weekday">
+        {SCHEDULE_WEEKDAYS.map((d) => (
+          <option value={d} selected={v.weekday === d}>
+            {WEEKDAY_LABELS[d]}
+          </option>
+        ))}
+      </select>
+      <p class="muted">毎週のときのみ使用</p>
+
+      <label for="hour">配信時刻</label>
+      <select id="hour" name="hour">
+        {Array.from({ length: 24 }, (_, h) => (
+          <option value={String(h)} selected={v.hour === h}>
+            {h}時
+          </option>
+        ))}
+      </select>
+      <p class="muted">
+        毎時0分の判定で配信されます（タイムゾーン: config.toml の
+        schedule.timezone、既定 Asia/Tokyo）
+      </p>
 
       <label for="days">収集対象日数</label>
       <input

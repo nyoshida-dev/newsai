@@ -44,6 +44,12 @@ max_items_per_feed = 20
 [post]
 channel = "general"
 header = "今週のニュース"
+
+[schedule]
+frequency = "weekly"
+weekday = "friday"
+hour = 18
+timezone = "Asia/Tokyo"
 `
 
 const FIXTURE_B = `
@@ -118,6 +124,18 @@ describe('serializeConfig round-trip', () => {
     expect(out).toContain('注目ニュース')
     expect(out).not.toMatch(/\\u6ce8/)
   })
+  it('preserves [schedule] through round-trip', () => {
+    const parsed = parseConfig(FIXTURE_A)
+    expect(parsed.schedule).toEqual({
+      frequency: 'weekly',
+      weekday: 'friday',
+      hour: 18,
+      timezone: 'Asia/Tokyo',
+    })
+    const out = serializeConfig(parsed)
+    expect(out).toContain('[schedule]')
+    expect(parseConfig(out).schedule).toEqual(parsed.schedule)
+  })
 })
 
 describe('applyForm', () => {
@@ -126,6 +144,9 @@ describe('applyForm', () => {
     const next = applyForm(cfg, {
       provider: 'codex',
       model: 'o3',
+      frequency: 'daily',
+      weekday: 'monday',
+      hour: '9',
       days: '200',
       source: 'web',
       channel_filter: 'eng',
@@ -159,10 +180,55 @@ describe('applyForm', () => {
     expect(next.prompt.system).toBe('sys\nline')
     expect(next.prompt.instruction).toBe('inst\nline2')
     expect(next.post).toMatchObject({ channel: '#news', header: 'H' })
+    expect(next.schedule).toEqual({
+      frequency: 'daily',
+      weekday: 'monday',
+      hour: 9,
+    })
     expect(next.custom).toEqual({ keep_me: 'yes', nested_flag: false })
     expect(cfg.llm.provider).toBe('api')
     expect(cfg.collect.days).toBe(3)
     expect(cfg.collect.web.max_items_per_feed).toBe(15)
+  })
+
+  it('writes schedule paths and preserves schedule.timezone', () => {
+    const cfg = parseConfig(`
+[llm]
+provider = "api"
+model = ""
+
+[schedule]
+frequency = "weekly"
+weekday = "friday"
+hour = 18
+timezone = "America/New_York"
+extra_flag = true
+`)
+    const next = applyForm(cfg, {
+      provider: 'api',
+      model: '',
+      frequency: 'daily',
+      weekday: 'wednesday',
+      hour: '7',
+      days: '7',
+      source: 'web',
+      channel_filter: '',
+      exclude_channels: '',
+      web_mode: 'llm_search',
+      web_queries: '',
+      web_feeds: '',
+      system: '',
+      instruction: '',
+      channel: '',
+      header: '',
+    })
+    expect(next.schedule).toEqual({
+      frequency: 'daily',
+      weekday: 'wednesday',
+      hour: 7,
+      timezone: 'America/New_York',
+      extra_flag: true,
+    })
   })
 
   it('formValuesFromConfig joins web arrays with newlines', () => {
@@ -171,6 +237,16 @@ describe('applyForm', () => {
     expect(v.web_mode).toBe('llm_search')
     expect(v.web_queries).toBe('AI 最新ニュース\nLLM リリース')
     expect(v.web_feeds).toBe('https://hnrss.org/newest?q=AI')
+    expect(v.frequency).toBe('weekly')
+    expect(v.weekday).toBe('friday')
+    expect(v.hour).toBe(18)
+  })
+
+  it('formValuesFromConfig defaults schedule when missing', () => {
+    const v = formValuesFromConfig(parseConfig(FIXTURE_B))
+    expect(v.frequency).toBe('weekly')
+    expect(v.weekday).toBe('friday')
+    expect(v.hour).toBe(18)
   })
 })
 

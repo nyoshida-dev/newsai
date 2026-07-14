@@ -3,6 +3,24 @@ import { parse as parseToml } from 'smol-toml'
 const HEADER =
   '# newsai config — edited via dashboard; comments are not preserved on save.'
 
+export const SCHEDULE_FREQUENCIES = ['weekly', 'daily'] as const
+export type ScheduleFrequency = (typeof SCHEDULE_FREQUENCIES)[number]
+
+export const SCHEDULE_WEEKDAYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const
+export type ScheduleWeekday = (typeof SCHEDULE_WEEKDAYS)[number]
+
+const DEFAULT_FREQUENCY: ScheduleFrequency = 'weekly'
+const DEFAULT_WEEKDAY: ScheduleWeekday = 'friday'
+const DEFAULT_HOUR = 18
+
 export function parseConfig(tomlText: string): Record<string, any> {
   return parseToml(tomlText) as Record<string, any>
 }
@@ -19,6 +37,7 @@ export function applyForm(
   if (!isPlainObject(out.prompt)) out.prompt = {}
   if (!isPlainObject(out.post)) out.post = {}
   if (!isPlainObject(out.collect.web)) out.collect.web = {}
+  if (!isPlainObject(out.schedule)) out.schedule = {}
 
   out.llm.provider = form.provider ?? ''
   out.llm.model = form.model ?? ''
@@ -43,6 +62,12 @@ export function applyForm(
   out.post.channel = form.channel ?? ''
   out.post.header = form.header ?? ''
 
+  out.schedule.frequency = form.frequency ?? DEFAULT_FREQUENCY
+  out.schedule.weekday = form.weekday ?? DEFAULT_WEEKDAY
+  const hourRaw = Number.parseInt(form.hour ?? '', 10)
+  const hour = Number.isFinite(hourRaw) ? hourRaw : DEFAULT_HOUR
+  out.schedule.hour = Math.min(23, Math.max(0, hour))
+
   return out
 }
 
@@ -57,9 +82,38 @@ export function validateWebFeeds(feedsText: string): string | null {
   return null
 }
 
+/** Return an error message if schedule fields are invalid; null if OK. */
+export function validateSchedule(form: {
+  frequency?: string
+  weekday?: string
+  hour?: string
+}): string | null {
+  const frequency = form.frequency ?? ''
+  if (!(SCHEDULE_FREQUENCIES as readonly string[]).includes(frequency)) {
+    return `frequency は weekly または daily である必要があります: ${frequency}`
+  }
+  const weekday = form.weekday ?? ''
+  if (!(SCHEDULE_WEEKDAYS as readonly string[]).includes(weekday)) {
+    return `weekday が不正です: ${weekday}`
+  }
+  const hourRaw = Number.parseInt(form.hour ?? '', 10)
+  if (
+    !Number.isFinite(hourRaw) ||
+    String(hourRaw) !== String(form.hour ?? '').trim() ||
+    hourRaw < 0 ||
+    hourRaw > 23
+  ) {
+    return `hour は 0〜23 の整数である必要があります: ${form.hour ?? ''}`
+  }
+  return null
+}
+
 export type FormValues = {
   provider: string
   model: string
+  frequency: ScheduleFrequency
+  weekday: ScheduleWeekday
+  hour: number
   days: number
   source: string
   channel_filter: string
@@ -79,12 +133,26 @@ export function formValuesFromConfig(cfg: Record<string, any>): FormValues {
   const collect = isPlainObject(cfg.collect) ? cfg.collect : {}
   const web = isPlainObject(collect.web) ? collect.web : {}
   const post = isPlainObject(cfg.post) ? cfg.post : {}
+  const schedule = isPlainObject(cfg.schedule) ? cfg.schedule : {}
   const exclude = collect.exclude_channels
   const queries = web.queries
   const feeds = web.feeds
+  const frequencyRaw = String(schedule.frequency ?? DEFAULT_FREQUENCY)
+  const weekdayRaw = String(schedule.weekday ?? DEFAULT_WEEKDAY)
+  const hourRaw =
+    typeof schedule.hour === 'number' ? schedule.hour : DEFAULT_HOUR
   return {
     provider: String(llm.provider ?? 'api'),
     model: String(llm.model ?? ''),
+    frequency: (SCHEDULE_FREQUENCIES as readonly string[]).includes(
+      frequencyRaw,
+    )
+      ? (frequencyRaw as ScheduleFrequency)
+      : DEFAULT_FREQUENCY,
+    weekday: (SCHEDULE_WEEKDAYS as readonly string[]).includes(weekdayRaw)
+      ? (weekdayRaw as ScheduleWeekday)
+      : DEFAULT_WEEKDAY,
+    hour: Math.min(23, Math.max(0, Number.isFinite(hourRaw) ? hourRaw : DEFAULT_HOUR)),
     days: typeof collect.days === 'number' ? collect.days : 7,
     source: String(collect.source ?? 'web'),
     channel_filter: String(collect.channel_filter ?? ''),

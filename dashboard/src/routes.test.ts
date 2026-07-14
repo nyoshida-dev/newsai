@@ -201,6 +201,9 @@ describe('routes', () => {
           sha: SHA_V1,
           provider: 'codex',
           model: '',
+          frequency: 'daily',
+          weekday: 'wednesday',
+          hour: '9',
           days: '7',
           source: 'web',
           channel_filter: '',
@@ -221,6 +224,10 @@ describe('routes', () => {
     expect(post.headers.get('Location')).toBe('/?saved=1')
     expect(putToml).toContain('保存後の新しいプロンプトです')
     expect(putToml).toContain('【番外編】も出力してください')
+    expect(putToml).toContain('[schedule]')
+    expect(putToml).toContain('frequency = "daily"')
+    expect(putToml).toContain('weekday = "wednesday"')
+    expect(putToml).toContain('hour = 9')
     const putCall = gh.calls.find(
       (c) => c.method === 'PUT' && c.url.includes('/contents/'),
     )
@@ -258,6 +265,9 @@ describe('routes', () => {
           sha: 'stale-sha',
           provider: 'api',
           model: '',
+          frequency: 'weekly',
+          weekday: 'friday',
+          hour: '18',
           days: '7',
           source: 'web',
           channel_filter: '',
