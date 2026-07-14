@@ -1,6 +1,7 @@
 import type { FormValues } from './config'
 import { SCHEDULE_FREQUENCIES, SCHEDULE_WEEKDAYS } from './config'
-import type { WorkflowRun } from './github'
+import { CREDENTIALS } from './credentials'
+import type { ActionsSecret, WorkflowRun } from './github'
 
 const WEEKDAY_LABELS: Record<(typeof SCHEDULE_WEEKDAYS)[number], string> = {
   monday: '月曜日',
@@ -30,6 +31,7 @@ button.secondary{background:#555}.flash{background:var(--flash);border:1px solid
 .err{background:#f8e8e8;border:1px solid #e0b0b0;padding:.6rem .8rem;margin-bottom:1rem;color:var(--err)}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:.4rem .35rem;border-bottom:1px solid var(--border)}
 .muted{color:var(--muted);font-size:13px}.actions{margin-top:1rem;display:flex;gap:.75rem;flex-wrap:wrap}
+.credential-label{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.badge{display:inline-block;border-radius:999px;padding:.1rem .5rem;font-size:12px;font-weight:500;background:#eee;color:#555}.badge.registered{background:#e8f0eb;color:#1f4b3a}
 `
 
 function Layout(props: {
@@ -101,6 +103,18 @@ function SettingsForm(props: { values: FormValues; sha: string }) {
 
       <label for="model">モデル</label>
       <input id="model" name="model" type="text" value={v.model} />
+
+      <label for="opencode_base_url">opencode BASE URL</label>
+      <input
+        id="opencode_base_url"
+        name="opencode_base_url"
+        type="text"
+        value={v.opencode_base_url}
+        placeholder="https://api.example.com/v1"
+      />
+      <p class="muted">
+        空欄の場合は無効です。使用時はモデルを custom/モデル名 の形式で指定します。
+      </p>
 
       <h2>配信スケジュール</h2>
       <label for="frequency">配信頻度</label>
@@ -211,11 +225,60 @@ function SettingsForm(props: { values: FormValues; sha: string }) {
   )
 }
 
+function CredentialsForm(props: { secrets: ActionsSecret[] }) {
+  const byName = new Map(props.secrets.map((secret) => [secret.name, secret]))
+  return (
+    <form method="post" action="/credentials">
+      <p class="muted">
+        値は書き込み専用です。登録済みの値は表示できません。値は GitHub Actions
+        Secrets に直接登録され、Cloudflare 側には保存されません。
+      </p>
+      {CREDENTIALS.map((credential) => {
+        const registered = byName.get(credential.secretName)
+        const badge = registered
+          ? `登録済み（${registered.updated_at.slice(0, 10)}）`
+          : '未登録'
+        return (
+          <div>
+            <label class="credential-label" for={credential.formName}>
+              {credential.secretName}
+              <span class={`badge${registered ? ' registered' : ''}`}>
+                {badge}
+              </span>
+            </label>
+            {credential.kind === 'json' ? (
+              <textarea
+                id={credential.formName}
+                name={credential.formName}
+                rows={5}
+                autocomplete="off"
+                spellcheck={false}
+              />
+            ) : (
+              <input
+                id={credential.formName}
+                name={credential.formName}
+                type="password"
+                autocomplete="off"
+              />
+            )}
+            <p class="muted">{credential.help}</p>
+          </div>
+        )
+      })}
+      <div class="actions">
+        <button type="submit">入力した認証情報を登録</button>
+      </div>
+    </form>
+  )
+}
+
 export function Dashboard(props: {
   user: string
   values: FormValues
   sha: string
   runs: WorkflowRun[]
+  secrets: ActionsSecret[]
   flash?: string
 }) {
   return (
@@ -229,6 +292,11 @@ export function Dashboard(props: {
           保存するとリポジトリにコミットされます。コメントは保持されません。
         </p>
         <SettingsForm values={props.values} sha={props.sha} />
+      </div>
+
+      <div class="card">
+        <h2>認証情報</h2>
+        <CredentialsForm secrets={props.secrets} />
       </div>
 
       <div class="card">

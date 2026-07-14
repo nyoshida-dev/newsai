@@ -25,6 +25,12 @@ export type WorkflowRun = {
   created_at: string
   updated_at: string
 }
+export type ActionsPublicKey = { key_id: string; key: string }
+export type ActionsSecret = {
+  name: string
+  created_at: string
+  updated_at: string
+}
 
 const API = 'https://api.github.com'
 const API_VERSION = '2022-11-28'
@@ -157,6 +163,45 @@ export async function listWorkflowRuns(
     `/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?per_page=10`,
   )
   return data.workflow_runs ?? []
+}
+
+export async function getActionsPublicKey(
+  token: string,
+  owner: string,
+  repo: string,
+): Promise<ActionsPublicKey> {
+  const { data } = await gh<ActionsPublicKey>(
+    token,
+    `/repos/${owner}/${repo}/actions/secrets/public-key`,
+  )
+  return data
+}
+
+export async function listActionsSecrets(
+  token: string,
+  owner: string,
+  repo: string,
+): Promise<ActionsSecret[]> {
+  const { data } = await gh<{ secrets: ActionsSecret[] }>(
+    token,
+    `/repos/${owner}/${repo}/actions/secrets?per_page=100`,
+  )
+  return data.secrets ?? []
+}
+
+export async function putActionsSecret(
+  token: string,
+  owner: string,
+  repo: string,
+  name: string,
+  encryptedValue: string,
+  keyId: string,
+): Promise<void> {
+  await gh(token, `/repos/${owner}/${repo}/actions/secrets/${name}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ encrypted_value: encryptedValue, key_id: keyId }),
+  })
 }
 
 export async function exchangeCodeForToken(

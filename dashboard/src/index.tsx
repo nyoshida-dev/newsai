@@ -15,16 +15,21 @@ import {
   validateSchedule,
   validateWebFeeds,
 } from './config'
+import { CREDENTIALS } from './credentials'
 import type { Env } from './env'
 import {
   dispatchWorkflow,
+  getActionsPublicKey,
   getConfigFile,
   getRepo,
   GitHubError,
+  listActionsSecrets,
   listWorkflowRuns,
+  putActionsSecret,
   putConfigFile,
 } from './github'
 import { computeCron } from './schedule'
+import { sealStringToBase64 } from './sealedbox'
 import {
   clearSessionCookie,
   getSessionCookie,
@@ -47,6 +52,7 @@ const app = new Hono<Env>()
 const FORM_KEYS = [
   'provider',
   'model',
+  'opencode_base_url',
   'frequency',
   'weekday',
   'hour',
@@ -136,13 +142,19 @@ app.get('/', requireSession, async (c) => {
       throw e
     }
 
-    const runs = await listWorkflowRuns(session.t, owner, repo, WORKFLOW_FILE)
+    const [runs, secrets] = await Promise.all([
+      listWorkflowRuns(session.t, owner, repo, WORKFLOW_FILE),
+      listActionsSecrets(session.t, owner, repo),
+    ])
     const values = formValuesFromConfig(parseConfig(configFile.content))
 
     const q = new URL(c.req.url).searchParams
     let flash: string | undefined
     if (q.get('saved') === '1') flash = '設定を保存しました。'
     if (q.get('dispatched') === '1') flash = 'ワークフローを起動しました。'
+    if (q.get('credentials') === '1') {
+      flash = '認証情報を登録しました（GitHub Actions Secrets）'
+    }
 
     return c.html(
       <Dashboard
@@ -150,6 +162,7 @@ app.get('/', requireSession, async (c) => {
         values={values}
         sha={configFile.sha}
         runs={runs}
+        secrets={secrets}
         flash={flash}
       />,
     )
@@ -282,6 +295,55 @@ app.post('/settings', requireSession, async (c) => {
   } catch (e) {
     if (isUnauthorized(e)) return onUnauthorized(c)
     const msg = e instanceof Error ? e.message : '保存に失敗しました'
+    return c.html(<ErrorPage message={msg} user={session.u} />, 500)
+  }
+})
+
+app.post('/credentials', requireSession, async (c) => {
+  const session = c.get('session')
+  const { REPO_OWNER: owner, REPO_NAME: repo } = c.env
+  const form = await c.req.formData()
+  const submitted = CREDENTIALS.flatMap((credential) => {
+    const raw = form.get(credential.formName)
+    if (typeof raw !== 'string' || raw.trim().length === 0) return []
+    return [{ credential, value: raw }]
+  })
+
+  for (const { credential, value } of submitted) {
+    if (!credential.json) continue
+    try {
+      JSON.parse(value)
+    } catch {
+      return c.html(
+        <ErrorPage
+          message={`${credential.secretName} は有効な JSON である必要があります。`}
+          user={session.u}
+        />,
+        400,
+      )
+    }
+  }
+
+  try {
+    if (submitted.length > 0) {
+      const publicKey = await getActionsPublicKey(session.t, owner, repo)
+      await Promise.all(
+        submitted.map(({ credential, value }) =>
+          putActionsSecret(
+            session.t,
+            owner,
+            repo,
+            credential.secretName,
+            sealStringToBase64(value, publicKey.key),
+            publicKey.key_id,
+          ),
+        ),
+      )
+    }
+    return c.redirect('/?credentials=1', 303)
+  } catch (e) {
+    if (isUnauthorized(e)) return onUnauthorized(c)
+    const msg = e instanceof Error ? e.message : '認証情報の登録に失敗しました'
     return c.html(<ErrorPage message={msg} user={session.u} />, 500)
   }
 })

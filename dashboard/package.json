@@ -9,8 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "blakejs": "^1.2.1",
     "hono": "^4",
-    "smol-toml": "^1.7"
+    "smol-toml": "^1.7",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5",

@@ -38,9 +38,17 @@ export function applyForm(
   if (!isPlainObject(out.post)) out.post = {}
   if (!isPlainObject(out.collect.web)) out.collect.web = {}
   if (!isPlainObject(out.schedule)) out.schedule = {}
+  if (!isPlainObject(out.llm.opencode)) out.llm.opencode = {}
 
   out.llm.provider = form.provider ?? ''
   out.llm.model = form.model ?? ''
+  out.llm.opencode.base_url = form.opencode_base_url ?? ''
+  if (typeof out.llm.opencode.npm !== 'string') {
+    out.llm.opencode.npm = '@ai-sdk/openai-compatible'
+  }
+  if (typeof out.llm.opencode.provider_id !== 'string') {
+    out.llm.opencode.provider_id = 'custom'
+  }
 
   const daysRaw = Number.parseInt(form.days ?? '', 10)
   const days = Number.isFinite(daysRaw) ? daysRaw : 1
@@ -111,6 +119,7 @@ export function validateSchedule(form: {
 export type FormValues = {
   provider: string
   model: string
+  opencode_base_url: string
   frequency: ScheduleFrequency
   weekday: ScheduleWeekday
   hour: number
@@ -129,6 +138,7 @@ export type FormValues = {
 
 export function formValuesFromConfig(cfg: Record<string, any>): FormValues {
   const llm = isPlainObject(cfg.llm) ? cfg.llm : {}
+  const opencode = isPlainObject(llm.opencode) ? llm.opencode : {}
   const prompt = isPlainObject(cfg.prompt) ? cfg.prompt : {}
   const collect = isPlainObject(cfg.collect) ? cfg.collect : {}
   const web = isPlainObject(collect.web) ? collect.web : {}
@@ -144,6 +154,7 @@ export function formValuesFromConfig(cfg: Record<string, any>): FormValues {
   return {
     provider: String(llm.provider ?? 'api'),
     model: String(llm.model ?? ''),
+    opencode_base_url: String(opencode.base_url ?? ''),
     frequency: (SCHEDULE_FREQUENCIES as readonly string[]).includes(
       frequencyRaw,
     )

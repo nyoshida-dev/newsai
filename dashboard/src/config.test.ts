@@ -17,6 +17,11 @@ max_completion_tokens = 15000
 timeout_seconds = 600
 extra_cli_args = []
 
+[llm.opencode]
+base_url = "https://gateway.example/v1"
+npm = "@ai-sdk/openai-compatible"
+provider_id = "custom"
+
 [prompt]
 system = "あなたは社内コミュニケーションの専門家です。"
 instruction = """
@@ -144,6 +149,7 @@ describe('applyForm', () => {
     const next = applyForm(cfg, {
       provider: 'codex',
       model: 'o3',
+      opencode_base_url: 'https://custom.example/v1',
       frequency: 'daily',
       weekday: 'monday',
       hour: '9',
@@ -164,6 +170,11 @@ describe('applyForm', () => {
       provider: 'codex',
       model: 'o3',
       future_flag: true,
+      opencode: {
+        base_url: 'https://custom.example/v1',
+        npm: '@ai-sdk/openai-compatible',
+        provider_id: 'custom',
+      },
     })
     expect(next.collect).toMatchObject({
       source: 'web',
@@ -207,6 +218,7 @@ extra_flag = true
     const next = applyForm(cfg, {
       provider: 'api',
       model: '',
+      opencode_base_url: '',
       frequency: 'daily',
       weekday: 'wednesday',
       hour: '7',
@@ -237,6 +249,7 @@ extra_flag = true
     expect(v.web_mode).toBe('llm_search')
     expect(v.web_queries).toBe('AI 最新ニュース\nLLM リリース')
     expect(v.web_feeds).toBe('https://hnrss.org/newest?q=AI')
+    expect(v.opencode_base_url).toBe('https://gateway.example/v1')
     expect(v.frequency).toBe('weekly')
     expect(v.weekday).toBe('friday')
     expect(v.hour).toBe(18)
@@ -247,6 +260,7 @@ extra_flag = true
     expect(v.frequency).toBe('weekly')
     expect(v.weekday).toBe('friday')
     expect(v.hour).toBe(18)
+    expect(v.opencode_base_url).toBe('')
   })
 })
 

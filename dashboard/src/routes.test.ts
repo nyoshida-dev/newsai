@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import nacl from 'tweetnacl'
 import app from './index'
 import { seal } from './session'
 
@@ -35,6 +36,11 @@ function tomlWithPrompt(instruction: string, provider = 'codex'): string {
 [llm]
 provider = "${provider}"
 model = ""
+
+[llm.opencode]
+base_url = ""
+npm = "@ai-sdk/openai-compatible"
+provider_id = "custom"
 
 [prompt]
 system = "あなたはAIニュースの専門家です。"
@@ -87,6 +93,12 @@ function toGitHubB64(text: string): string {
   return btoa(bin)
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+  return btoa(bin)
+}
+
 function fromGitHubB64(b64: string): string {
   const bin = atob(b64.replace(/\n/g, ''))
   const bytes = new Uint8Array(bin.length)
@@ -104,6 +116,9 @@ function stubGitHub(opts: {
   onPut?: (toml: string) => void
   onWorkflowPut?: (yml: string) => void
   workflowPutStatus?: number
+  secrets?: { name: string; created_at: string; updated_at: string }[]
+  publicKey?: string
+  onSecretPut?: (name: string, body: string) => void
 }): { calls: FetchCall[] } {
   const calls: FetchCall[] = []
   let content = opts.content
@@ -199,6 +214,26 @@ function stubGitHub(opts: {
         })
       }
 
+      if (url.endsWith('/actions/secrets/public-key') && method === 'GET') {
+        return new Response(
+          JSON.stringify({ key_id: 'key-id-1', key: opts.publicKey ?? '' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (url.includes('/actions/secrets?per_page=100') && method === 'GET') {
+        return new Response(JSON.stringify({ secrets: opts.secrets ?? [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      const secretMatch = url.match(/\/actions\/secrets\/([^/?]+)$/)
+      if (secretMatch && method === 'PUT') {
+        opts.onSecretPut?.(decodeURIComponent(secretMatch[1]!), body ?? '')
+        return new Response(null, { status: 204 })
+      }
+
       return new Response(`unexpected fetch: ${method} ${url}`, { status: 500 })
     }),
   )
@@ -222,6 +257,7 @@ function formBody(fields: Record<string, string>): URLSearchParams {
 const BASE_SETTINGS = {
   provider: 'codex',
   model: '',
+  opencode_base_url: '',
   days: '7',
   source: 'web',
   channel_filter: '',
@@ -259,6 +295,9 @@ describe('routes', () => {
     expect(html).toContain('【注目ニュース】を作成します')
     expect(html).toContain(`name="sha" value="${SHA_V1}"`)
     expect(html).toMatch(/<option value="codex" selected="">/)
+    expect(html).toContain('id="opencode_base_url"')
+    expect(html).toContain('値は書き込み専用です')
+    expect(html).toContain('CLAUDE_CODE_OAUTH_TOKEN')
   })
 
   it('POST /settings commits Japanese text and redirects; GET shows updated form', async () => {
@@ -288,6 +327,7 @@ describe('routes', () => {
         body: formBody({
           ...BASE_SETTINGS,
           sha: SHA_V1,
+          opencode_base_url: 'https://opencode.example/v1',
           frequency: 'daily',
           weekday: 'wednesday',
           hour: '9',
@@ -305,6 +345,8 @@ describe('routes', () => {
     expect(putToml).toContain('frequency = "daily"')
     expect(putToml).toContain('weekday = "wednesday"')
     expect(putToml).toContain('hour = 9')
+    expect(putToml).toContain('[llm.opencode]')
+    expect(putToml).toContain('base_url = "https://opencode.example/v1"')
 
     const puts = gh.calls.filter(
       (c) => c.method === 'PUT' && c.url.includes('/contents/'),
@@ -427,6 +469,7 @@ describe('routes', () => {
           sha: 'stale-sha',
           provider: 'api',
           model: '',
+          opencode_base_url: '',
           frequency: 'weekly',
           weekday: 'friday',
           hour: '18',
@@ -462,6 +505,121 @@ describe('routes', () => {
     const html = await res.text()
     expect(html).toContain('ログイン')
     expect(html).not.toContain('管理ダッシュボード')
+    expect(gh.calls).toHaveLength(0)
+  })
+
+  it('GET / shows registered and unregistered credential badges', async () => {
+    stubGitHub({
+      content: tomlWithPrompt(PROMPT_JP),
+      sha: SHA_V1,
+      secrets: [
+        {
+          name: 'CODEX_AUTH_JSON',
+          created_at: '2026-07-01T00:00:00Z',
+          updated_at: '2026-07-14T03:04:05Z',
+        },
+      ],
+    })
+    const cookie = await sessionCookie()
+
+    const res = await app.request(
+      `${ORIGIN}/`,
+      { headers: { Cookie: cookie } },
+      ENV,
+    )
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('登録済み（2026-07-14）')
+    expect(html).toContain('未登録')
+  })
+
+  it('POST /credentials writes only non-empty fields and never sends plaintext', async () => {
+    const recipient = nacl.box.keyPair()
+    const writes: { name: string; body: string }[] = []
+    const gh = stubGitHub({
+      content: tomlWithPrompt(PROMPT_JP),
+      sha: SHA_V1,
+      publicKey: bytesToBase64(recipient.publicKey),
+      onSecretPut: (name, body) => writes.push({ name, body }),
+    })
+    const cookie = await sessionCookie()
+
+    const res = await app.request(
+      `${ORIGIN}/credentials`,
+      {
+        method: 'POST',
+        headers: {
+          Cookie: cookie,
+          Origin: ORIGIN,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formBody({
+          claude_token: 'claude-secret-value',
+          codex_auth_json: '{"tokens":{"access_token":"codex-secret"}}',
+          opencode_api_key: '',
+          opencode_auth_json: '',
+          openai_api_key: '   ',
+        }),
+      },
+      ENV,
+    )
+
+    expect(res.status).toBe(303)
+    expect(res.headers.get('Location')).toBe('/?credentials=1')
+    expect(
+      gh.calls.filter((call) =>
+        call.url.endsWith('/actions/secrets/public-key'),
+      ),
+    ).toHaveLength(1)
+    expect(writes.map((write) => write.name).sort()).toEqual([
+      'CLAUDE_CODE_OAUTH_TOKEN',
+      'CODEX_AUTH_JSON',
+    ])
+    for (const write of writes) {
+      const parsed = JSON.parse(write.body) as {
+        encrypted_value: string
+        key_id: string
+      }
+      expect(parsed.key_id).toBe('key-id-1')
+      expect(parsed.encrypted_value).not.toContain('secret')
+      expect(write.body).not.toContain('claude-secret-value')
+      expect(write.body).not.toContain('codex-secret')
+    }
+
+    const get = await app.request(
+      `${ORIGIN}/?credentials=1`,
+      { headers: { Cookie: cookie } },
+      ENV,
+    )
+    expect(get.status).toBe(200)
+    expect(await get.text()).toContain(
+      '認証情報を登録しました（GitHub Actions Secrets）',
+    )
+  })
+
+  it('POST /credentials rejects invalid JSON without echoing or calling GitHub', async () => {
+    const gh = stubGitHub({ content: tomlWithPrompt(PROMPT_JP), sha: SHA_V1 })
+    const cookie = await sessionCookie()
+    const submitted = '{"token":"must-not-be-rendered"'
+
+    const res = await app.request(
+      `${ORIGIN}/credentials`,
+      {
+        method: 'POST',
+        headers: {
+          Cookie: cookie,
+          Origin: ORIGIN,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formBody({ codex_auth_json: submitted }),
+      },
+      ENV,
+    )
+
+    expect(res.status).toBe(400)
+    const html = await res.text()
+    expect(html).toContain('CODEX_AUTH_JSON は有効な JSON')
+    expect(html).not.toContain('must-not-be-rendered')
     expect(gh.calls).toHaveLength(0)
   })
 })
