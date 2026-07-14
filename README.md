@@ -1,12 +1,34 @@
 ## newsai
 
 newsai (News×AI) is a tool that automatically generates "This Week's Highlights" from your organization's Slack messages and posts it to Slack.
-Scheduled runs use GitHub Actions. Fork this repository and configure the following Repository secrets to use it.
+Scheduled runs use GitHub Actions. Fork this repository and configure the secrets / variables below for your chosen LLM provider.
 
-- OPENAI_API_KEY
-- SLACK_BOT_TOKEN
-- SLACK_CHANNEL
-- SLACK_EXCLUDE_CHANNELS
+### Secrets and variables (provider matrix)
+
+| Provider | Local install / login | GitHub Actions secret(s) |
+|---|---|---|
+| `api` (default) | Set `OPENAI_API_KEY` (optional `base_url` / `api_key_env` in `config.toml`) | `OPENAI_API_KEY` |
+| `codex` | `npm i -g @openai/codex && codex login` | `CODEX_AUTH_JSON` (= contents of `~/.codex/auth.json`) |
+| `claude` | `npm i -g @anthropic-ai/claude-code && claude setup-token` | `CLAUDE_CODE_OAUTH_TOKEN` (= output of `claude setup-token`) |
+| `opencode` | `npm i -g opencode-ai` (+ login) | `OPENCODE_AUTH_JSON` (= contents of `~/.local/share/opencode/auth.json`) |
+
+Always required (any provider):
+
+- `SLACK_BOT_TOKEN`
+- `SLACK_CHANNEL`
+- `SLACK_EXCLUDE_CHANNELS` (optional)
+
+Repository variable:
+
+- `LLM_PROVIDER` — default provider when the `workflow_dispatch` **provider** input is empty (`api` \| `codex` \| `claude` \| `opencode`)
+- `LLM_MODEL` (optional)
+
+`workflow_dispatch` inputs:
+
+- **provider** — override `LLM_PROVIDER` for a single run (`""` / `api` / `codex` / `claude` / `opencode`)
+- **dry_run** — generate but do not post to Slack (`--dry-run`; the digest is printed into Actions logs)
+
+**Auth caveats:** Claude `setup-token` is the officially supported CI path. Codex `auth.json` in CI is positioned for trusted private automation (OpenAI recommends API keys for production). opencode subscription OAuth in CI is a gray zone — use at your own risk. Codex / opencode refresh tokens may rotate — re-seed the secret when auth fails. Never cache `auth.json` in `actions/cache`. `--dry-run` prints the digest into Actions logs.
 
 See the blog for more details.
 
@@ -19,12 +41,14 @@ https://zenn.dev/peoplex_blog/articles/2509-how-to-create-ai-news
 - **generate_weekly_news.py**: Analyze the collected messages and generate the weekly news copy
 - **post_slack.py**: Post the generated copy to Slack
 - **main.py**: Run collect → generate → post end to end
+- **config.toml** / **config.py**: Externalized prompts and collection parameters
+- **llm_providers.py**: Multi-provider LLM abstraction (`api` / `codex` / `claude` / `opencode`)
 
 ## Requirements
 - **Python**: 3.13 or later
 - **uv**: Used for Python package and environment management
 - **Slack bot token**: `SLACK_BOT_TOKEN`
-- **OpenAI API key**: `OPENAI_API_KEY`
+- **LLM credentials**: depends on provider (see matrix above). For `api`, an OpenAI-compatible API key.
 
 ### Slack permissions
 - `channels:read`, `channels:history`
@@ -55,6 +79,42 @@ cp .env.example .env
 ```
 Set each environment variable appropriately.
 
+### Configuration (config.toml)
+Copy the example and edit:
+```bash
+cp config.example.toml config.toml
+```
+
+Precedence (highest first): **CLI args > env vars > config.toml > built-in defaults**. Missing `config.toml` keeps the previous default behavior.
+
+| Section | Key | Description |
+|---|---|---|
+| `[llm]` | `provider` | `api` \| `codex` \| `claude` \| `opencode` |
+| `[llm]` | `model` | Model id; empty = provider default (`api` → `gpt-5.5`) |
+| `[llm]` | `base_url` | OpenAI-compatible base URL (`api` only) |
+| `[llm]` | `api_key_env` | Env var name for the API key (not the secret itself) |
+| `[llm]` | `max_completion_tokens` | Max tokens (`api` only) |
+| `[llm]` | `timeout_seconds` | Request / CLI timeout |
+| `[llm]` | `extra_cli_args` | Extra argv for CLI providers |
+| `[prompt]` | `system` | System prompt |
+| `[prompt]` | `instruction` | Instruction prompt prepended to Slack messages |
+| `[prompt]` | `instruction_file` | If set, read this file instead of `instruction` |
+| `[collect]` | `days` | Collection window in days |
+| `[collect]` | `channel_filter` | Substring filter for channel names |
+| `[collect]` | `exclude_channels` | Extra excluded channels (union with `SLACK_EXCLUDE_CHANNELS`) |
+| `[collect]` | `max_messages_per_channel` | Cap messages per channel for analysis |
+| `[collect]` | `max_message_chars` | Truncate each message to this many chars |
+| `[collect]` | `auto_join` | Auto-join public channels |
+| `[post]` | `channel` | Default post channel (`SLACK_CHANNEL` env wins when set) |
+| `[post]` | `thread` | Post long text as a thread |
+| `[post]` | `header` | Custom header prefix (empty = default weekly title) |
+
+### LLM smoke test
+```bash
+uv run python llm_providers.py --prompt "1+1は？数字のみ回答してください。"
+uv run python llm_providers.py --provider claude --prompt "こんにちは"
+```
+
 ## Scripts and how to run
 
 ### collect_slack_messages.py (Collect Slack messages)
@@ -73,15 +133,20 @@ uv run python collect_slack_messages.py --output messages.json
 ```
 
 ### generate_weekly_news.py (Generate weekly news)
-- **Overview**: Read the saved JSON and, using the OpenAI API, generate weekly news copy including "Highlights" and "Extras"
+- **Overview**: Read the saved JSON and, using the configured LLM provider, generate weekly news copy including "Highlights" and "Extras"
 - **Key arguments**
   - `--messages-file`: Path to the collected JSON (if omitted, automatically detect the latest `slack_messages_*.json`)
-  - `--days`: Number of days to analyze (default: 7)
-  - `--openai-key`: OpenAI API key (uses `OPENAI_API_KEY` if omitted)
+  - `--days`: Number of days to analyze (default from config)
+  - `--provider`: LLM provider (`api` \| `codex` \| `claude` \| `opencode`)
+  - `--model`: Model name
+  - `--config`: Path to `config.toml`
+  - `--openai-key`: Deprecated alias; forces `provider=api` and sets the API key
 - **Examples**
 ```bash
 uv run python generate_weekly_news.py
 uv run python generate_weekly_news.py --days 7 --messages-file slack_messages_20250929_145307.json
+uv run python generate_weekly_news.py --provider claude --model sonnet
+uv run python generate_weekly_news.py --config ./config.toml --provider api
 ```
 The output is printed as text to stdout.
 
@@ -98,8 +163,27 @@ uv run python post_slack.py --channel general --text "Body"
 
 ### main.py (Run end to end)
 - **Overview**: Run collection → summary generation → Slack post end to end
-- **Required environment variables**: `SLACK_BOT_TOKEN`, `OPENAI_API_KEY`, `SLACK_CHANNEL`
+- **Required environment variables**: `SLACK_BOT_TOKEN`, `SLACK_CHANNEL`, plus provider credentials (see matrix)
+- **Key arguments**: `--provider`, `--model`, `--config`, `--dry-run` (generate and print, skip Slack post)
 - **Example**
 ```bash
 uv run python main.py
+uv run python main.py --dry-run
+uv run python main.py --provider claude
 ```
+
+## Admin dashboard (optional)
+A simple hosted dashboard (Cloudflare Workers) to edit config.toml, trigger runs, and view run history.
+1. Create a GitHub OAuth App (Settings → Developer settings → OAuth Apps):
+   - Homepage URL:  https://newsai-dashboard.<your-subdomain>.workers.dev
+   - Authorization callback URL: https://newsai-dashboard.<your-subdomain>.workers.dev/auth/callback
+2. cd dashboard && npm install
+3. Edit wrangler.jsonc: set REPO_OWNER / REPO_NAME to your fork.
+4. npx wrangler secret put GITHUB_CLIENT_ID
+   npx wrangler secret put GITHUB_CLIENT_SECRET
+   npx wrangler secret put SESSION_SECRET   # e.g. openssl rand -hex 32
+5. npx wrangler deploy
+Anyone may log in with GitHub, but only users with push access to the repo can use the dashboard.
+Saving from the dashboard does not preserve comments in config.toml (see config.example.toml for the commented reference).
+If the repo is org-owned with OAuth App restrictions, approve the app for the org.
+Local dev: create a second OAuth App with callback http://localhost:8787/auth/callback, copy .dev.vars.example to .dev.vars, then npx wrangler dev.
