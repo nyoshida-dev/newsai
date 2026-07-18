@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "newsai-dispatcher",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  // テストアカウント吉田 — the account this repo's wrangler login can deploy to.
+  // Change if the dispatcher should live on a different account.
+  "account_id": "551a70c14b764d04a5bf9b19f692c571",
+  "triggers": {
+    // 00:00 UTC = 09:00 JST. Cloudflare Cron Triggers fire on time (unlike
+    // GitHub's fork schedule). Change here if the delivery hour changes.
+    "crons": ["0 0 * * *"]
+  },
+  "vars": {
+    "REPO_OWNER": "nyoshida-dev",
+    "REPO_NAME": "newsai",
+    "WORKFLOW_FILE": "weekly-news.yml",
+    "REF": "main"
+  }
+  // Secret (set via `wrangler secret put`): GITHUB_TOKEN, and optionally TRIGGER_KEY.
+}

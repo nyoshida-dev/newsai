@@ -1,0 +1,14 @@
+{
+  "name": "newsai-dispatcher",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev --test-scheduled",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5",
+    "typescript": "^5",
+    "wrangler": "^4"
+  }
+}
