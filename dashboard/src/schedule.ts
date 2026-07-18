@@ -35,6 +35,15 @@ export function getOffsetMinutes(timezone: string, date: Date): number {
 }
 
 /**
+ * Minutes past the requested hour at which the run actually fires.
+ * GitHub delays or silently drops scheduled runs during high-load windows —
+ * the start of every hour, and 00:00 UTC most of all. Offsetting off :00 lands
+ * the job in a less congested minute and cuts the chance of a missed delivery.
+ * https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
+ */
+export const SCHEDULE_JITTER_MINUTES = 13
+
+/**
  * Compute a GitHub Actions cron expression from local schedule fields.
  * Offset is taken at `now` (default: current time) so DST zones freeze the
  * offset valid at save time.
@@ -47,7 +56,7 @@ export function computeCron(
   now: Date = new Date(),
 ): string {
   const offsetMinutes = getOffsetMinutes(timezone, now)
-  let utcTotalMinutes = hour * 60 - offsetMinutes
+  let utcTotalMinutes = hour * 60 - offsetMinutes + SCHEDULE_JITTER_MINUTES
   let dayShift = 0
   while (utcTotalMinutes < 0) {
     utcTotalMinutes += 1440

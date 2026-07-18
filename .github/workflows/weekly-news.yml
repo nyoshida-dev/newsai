@@ -1,7 +1,9 @@
 name: AI News
 on:
   schedule:
-    - cron: "0 0 * * *"
+    # :13 past the hour — GitHub delays/drops top-of-hour (esp. 00:00 UTC) runs.
+    # 00:13 UTC = 09:13 JST. Kept in sync with dashboard schedule.ts jitter.
+    - cron: "13 0 * * *"
   workflow_dispatch:
     inputs:
       provider:

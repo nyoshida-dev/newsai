@@ -353,9 +353,9 @@ describe('routes', () => {
     )
     expect(puts).toHaveLength(2)
     expect(puts[1]!.url).toContain(WORKFLOW_PATH)
-    expect(putWorkflow).toContain('cron: "0 0 * * *"')
+    expect(putWorkflow).toContain('cron: "13 0 * * *"')
     const wfBody = JSON.parse(puts[1]!.body!) as { content: string; message: string }
-    expect(fromGitHubB64(wfBody.content)).toContain('0 0 * * *')
+    expect(fromGitHubB64(wfBody.content)).toContain('13 0 * * *')
     expect(wfBody.message).toContain('by tester')
 
     const get = await app.request(
@@ -376,7 +376,9 @@ describe('routes', () => {
     const gh = stubGitHub({
       content: tomlWithPrompt(PROMPT_JP, 'codex'),
       sha: SHA_V1,
-      workflowContent: workflowYaml('0 9 * * 5'),
+      // friday 18 JST now computes to a :13-jittered cron; seed the same so the
+      // save is a no-op and the workflow PUT is correctly skipped.
+      workflowContent: workflowYaml('13 9 * * 5'),
     })
     const cookie = await sessionCookie()
 
