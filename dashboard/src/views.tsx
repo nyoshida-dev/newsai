@@ -146,7 +146,8 @@ function SettingsForm(props: { values: FormValues; sha: string }) {
       </select>
       <p class="muted">
         毎時0分の判定で配信されます（タイムゾーン: config.toml の
-        schedule.timezone、既定 Asia/Tokyo）
+        schedule.timezone、既定 Asia/Tokyo）。
+        保存すれば次回の判定から反映されます。
       </p>
 
       <label for="days">収集対象日数</label>
@@ -389,7 +390,7 @@ export function ErrorPage(props: {
   title?: string
   message: string
   user?: string
-  /** Show an explicit logout form (e.g. missing workflow OAuth scope). */
+  /** Show an explicit logout form, for errors a re-login would clear. */
   logout?: boolean
 }) {
   return (

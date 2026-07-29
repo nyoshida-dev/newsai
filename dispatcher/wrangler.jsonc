@@ -7,15 +7,18 @@
   // Change if the dispatcher should live on a different account.
   "account_id": "551a70c14b764d04a5bf9b19f692c571",
   "triggers": {
-    // 00:00 UTC = 09:00 JST. Cloudflare Cron Triggers fire on time (unlike
-    // GitHub's fork schedule). Change here if the delivery hour changes.
-    "crons": ["0 0 * * *"]
+    // Wake hourly; the Worker reads config.toml [schedule] and dispatches only
+    // on the configured hour. The delivery time lives in config.toml (editable
+    // from the dashboard) — do not encode it here. Cloudflare Cron Triggers
+    // fire on time, unlike GitHub's fork schedule.
+    "crons": ["0 * * * *"]
   },
   "vars": {
     "REPO_OWNER": "nyoshida-dev",
     "REPO_NAME": "newsai",
     "WORKFLOW_FILE": "weekly-news.yml",
-    "REF": "main"
+    "REF": "main",
+    "CONFIG_PATH": "config.toml"
   }
   // Secret (set via `wrangler secret put`): GITHUB_TOKEN, and optionally TRIGGER_KEY.
 }

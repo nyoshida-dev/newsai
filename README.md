@@ -30,7 +30,7 @@ Repository variable:
 
 ### Schedule
 
-配信スケジュールはダッシュボードの保存時に workflow の cron に反映される（ログインユーザーのトークンで commit）。`config.toml` の `[schedule]` を手で編集した場合は cron も手で合わせる必要がある。OAuth スコープは `repo workflow`。timezone の DST 注意（保存時点の UTC オフセットで固定計算）。
+配信スケジュールの正は `config.toml` の `[schedule]` のみ。dispatcher Worker が毎時0分に起床し、その時刻が配信時刻かを判定して `workflow_dispatch` を叩く。ダッシュボードでの保存（または `[schedule]` の手編集）だけで次回の判定から反映され、workflow ファイルの編集も Worker の再デプロイも不要。判定は発火時点のタイムゾーンで行うため DST も自動追従する。OAuth スコープは `repo`。
 
 | Key | Description |
 |---|---|
@@ -39,7 +39,7 @@ Repository variable:
 | `hour` | Delivery hour `0`–`23` in `timezone` |
 | `timezone` | IANA name (default `Asia/Tokyo`) |
 
-Defaults preserve Friday 18:00 JST (`cron: "0 9 * * 5"`). Manual `workflow_dispatch` always runs.
+`config.toml` が読めない場合は毎日 09:00 JST にフォールバックして配信を止めない（Worker のログに記録される）。配信直前90分以内に既に run がある場合は二重投稿を避けてスキップする。手動の `workflow_dispatch` はスケジュール判定を経ずに常に実行される。
 
 **Auth caveats:** Claude `setup-token` is the officially supported CI path. Codex `auth.json` in CI is positioned for trusted private automation (OpenAI recommends API keys for production). opencode subscription OAuth in CI is a gray zone — use at your own risk. Codex / opencode refresh tokens may rotate — re-seed the secret when auth fails. Never cache `auth.json` in `actions/cache`. `--dry-run` prints the digest into Actions logs.
 
@@ -210,6 +210,17 @@ uv run python main.py --dry-run
 uv run python main.py --provider claude
 ```
 
+## Dispatcher (delivery trigger)
+A Cloudflare Worker that fires the delivery workflow. GitHub's own `schedule` trigger is not used — it is delayed or silently dropped on forks. The Worker wakes hourly, reads `[schedule]` from config.toml, and calls `workflow_dispatch` when the configured hour has arrived.
+1. cd dispatcher && npm install
+2. Edit wrangler.jsonc: set REPO_OWNER / REPO_NAME / account_id to your fork.
+3. npx wrangler secret put GITHUB_TOKEN
+4. npx wrangler deploy
+`GITHUB_TOKEN` is a fine-grained PAT on the repo needing **Actions: Read and write** (dispatch + duplicate-run check). **Contents: Read** is only required for a private repo: config.toml is read via the contents API first, falling back to raw.githubusercontent.com, which needs no credentials on a public repo. If both reads fail the Worker logs the reason and delivers on the fallback schedule (daily 09:00 JST) rather than the configured one — check `npx wrangler tail`.
+(PATs cannot be created via `gh` or the REST API; use Settings → Developer settings → Personal access tokens in a browser.)
+Optional: `npx wrangler secret put TRIGGER_KEY` enables `POST /trigger?key=…` (add `&dry_run=true`) to dispatch immediately, bypassing the schedule check.
+Changing the delivery time does **not** require redeploying this Worker — edit `[schedule]` in config.toml (or use the dashboard).
+
 ## Admin dashboard (optional)
 A simple hosted dashboard (Cloudflare Workers) to edit config.toml, trigger runs, and view run history.
 1. Create a GitHub OAuth App (Settings → Developer settings → OAuth Apps):
@@ -221,7 +232,7 @@ A simple hosted dashboard (Cloudflare Workers) to edit config.toml, trigger runs
    npx wrangler secret put GITHUB_CLIENT_SECRET
    npx wrangler secret put SESSION_SECRET   # e.g. openssl rand -hex 32
 5. npx wrangler deploy
-OAuth scope requested: `repo workflow` (needed to commit the workflow cron on schedule save). After upgrading an existing deployment, re-login is required (orchestrator rotates `SESSION_SECRET` to invalidate old sessions).
+OAuth scope requested: `repo` (writes config.toml and dispatches workflows; the dashboard never edits workflow files). After upgrading an existing deployment, re-login is required (orchestrator rotates `SESSION_SECRET` to invalidate old sessions).
 Anyone may log in with GitHub, but only users with push access to the repo can use the dashboard.
 Saving from the dashboard does not preserve comments in config.toml (see config.example.toml for the commented reference).
 If the repo is org-owned with OAuth App restrictions, approve the app for the org.
