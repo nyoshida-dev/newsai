@@ -13,6 +13,11 @@ from post_slack import SlackPoster
 from config import load_config
 from llm_providers import create_provider, LLMError
 
+# [prompt].instruction が要求するセクション見出し。LLM が要約の代わりに拒否文・
+# 権限要求・レート制限メッセージを返しても文字列としては空でないため、
+# 投稿前にこの見出しの有無で正当な要約かどうかを判定する。
+REQUIRED_SECTION = "【注目ニュース】"
+
 
 def _run_slack_source(cfg, provider, slack_token: str, verbose: bool) -> str | None:
     if verbose:
@@ -120,6 +125,15 @@ def main() -> int:
 
     if not summary:
         print("❌ 要約の生成に失敗しました", file=sys.stderr)
+        return 1
+
+    if REQUIRED_SECTION not in summary:
+        print(
+            f"❌ 要約に {REQUIRED_SECTION} が含まれていません。"
+            "LLMが拒否・権限要求・エラーメッセージを返した可能性があります。\n"
+            f"応答冒頭: {summary[:300]}",
+            file=sys.stderr,
+        )
         return 1
 
     if args.dry_run:
