@@ -152,6 +152,10 @@ class ClaudeCodeProvider(CLIProviderBase):
             "--system-prompt",
             system_prompt,
         ]
+        # --tools only declares availability; without --allowedTools the CLI has
+        # no permission to run them and answers with a permission request.
+        if tools:
+            argv.extend(["--allowedTools", tools])
         if self.model:
             argv.extend(["--model", self.model])
         argv.extend(self.extra_cli_args)
