@@ -10,6 +10,14 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 
+class SlackPostError(RuntimeError):
+    """Raised when a post could not be delivered to Slack.
+
+    post() の戻り値は permalink であり、投稿成功でも chat_getPermalink の失敗で
+    None になりうるため、成功判定には使えない。失敗はこの例外で通知する。
+    """
+
+
 class SlackPoster:
     def __init__(
         self,
@@ -251,8 +259,7 @@ class SlackPoster:
     def post(self, text: str, channel: Optional[str] = None, thread: bool = True) -> Optional[str]:
         channel_id = self._resolve_channel_id(channel or self.default_channel or "")
         if not channel_id:
-            print("❌ チャンネルが見つかりませんでした", file=sys.stderr)
-            return None
+            raise SlackPostError("❌ チャンネルが見つかりませんでした")
 
         header_text = (self.header or "📰 今日のAIニュース").replace("*", "").strip()
         sections = self._parse_digest(text)
@@ -284,8 +291,7 @@ class SlackPoster:
         formatted_text = self.format_slack_message(self._linkify_sources(text))
         text_chunks = self._split_into_chunks(formatted_text)
         if not text_chunks:
-            print("❌ 投稿するテキストが空です", file=sys.stderr)
-            return None
+            raise SlackPostError("❌ 投稿するテキストが空です")
         try:
             first = self.client.chat_postMessage(channel=channel_id, text=text_chunks[0])
             thread_ts = first.get("ts") if thread else None
@@ -294,8 +300,9 @@ class SlackPoster:
             self._log("✅ Slackへの投稿が完了しました")
             return self._permalink(channel_id, first.get("ts"))
         except SlackApiError as e:
-            print(f"❌ Slack投稿エラー: {getattr(e.response, 'data', e.response).get('error', str(e))}", file=sys.stderr)
-            return None
+            raise SlackPostError(
+                f"❌ Slack投稿エラー: {getattr(e.response, 'data', e.response).get('error', str(e))}"
+            ) from e
 
 
 def main() -> int:
@@ -340,7 +347,11 @@ def main() -> int:
         default_channel=args.channel or os.environ.get("SLACK_CHANNEL"),
         verbose=args.verbose
     )
-    poster.post(text=text.strip(), channel=args.channel, thread=not args.no_thread)
+    try:
+        poster.post(text=text.strip(), channel=args.channel, thread=not args.no_thread)
+    except SlackPostError as e:
+        print(str(e), file=sys.stderr)
+        return 1
     return 0
 
 

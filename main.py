@@ -9,7 +9,7 @@ from collect_web_news import (
     generate_web_news,
 )
 from generate_weekly_news import WeeklyNewsGenerator
-from post_slack import SlackPoster
+from post_slack import SlackPoster, SlackPostError
 from config import load_config
 from llm_providers import create_provider, LLMError
 
@@ -148,7 +148,11 @@ def main() -> int:
         verbose=verbose,
         header=cfg.header,
     )
-    poster.post(text=summary, channel=slack_channel, thread=cfg.thread)
+    try:
+        poster.post(text=summary, channel=slack_channel, thread=cfg.thread)
+    except SlackPostError as e:
+        print(str(e), file=sys.stderr)
+        return 1
     return 0
 
 
