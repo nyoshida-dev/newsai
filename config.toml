@@ -82,5 +82,5 @@ header = "📰 今日のAIニュース"
 [schedule]
 frequency = "daily"
 weekday = "monday"
-hour = 9
+hour = 7
 timezone = "Asia/Tokyo"
