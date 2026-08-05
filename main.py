@@ -147,6 +147,7 @@ def main() -> int:
         default_channel=slack_channel,
         verbose=verbose,
         header=cfg.header,
+        lead_items=cfg.lead_items,
     )
     try:
         poster.post(text=summary, channel=slack_channel, thread=cfg.thread)

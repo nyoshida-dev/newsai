@@ -90,6 +90,7 @@ class Config:
     channel: str = ""  # SLACK_CHANNEL env takes precedence when set
     thread: bool = True
     header: str = ""
+    lead_items: int = 1  # items kept in the channel post; the rest go in-thread (0 = no split)
     # [schedule]
     frequency: str = "weekly"  # daily | weekly
     weekday: str = "friday"  # monday..sunday (weekly only)
@@ -189,6 +190,8 @@ def _apply_toml(cfg: Config, data: dict[str, Any]) -> Config:
         updates["thread"] = bool(post["thread"])
     if "header" in post:
         updates["header"] = str(post["header"])
+    if "lead_items" in post:
+        updates["lead_items"] = int(post["lead_items"])
 
     if "frequency" in schedule:
         updates["frequency"] = str(schedule["frequency"])

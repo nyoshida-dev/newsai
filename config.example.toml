@@ -109,6 +109,8 @@ channel = ""
 thread = true
 # ヘッダー接頭辞
 header = "📰 今週のAIニュース"
+# チャンネル本文に残す注目ニュースの件数。残りと番外編はスレッドに投稿する（0 = 分割しない）
+lead_items = 1
 
 [schedule]
 # 配信頻度: daily | weekly

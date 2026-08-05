@@ -135,6 +135,7 @@ Precedence (highest first): **CLI args > env vars > config.toml > built-in defau
 | `[post]` | `channel` | Default post channel (`SLACK_CHANNEL` env wins when set) |
 | `[post]` | `thread` | Post long text as a thread |
 | `[post]` | `header` | Custom header prefix (empty = default weekly title) |
+| `[post]` | `lead_items` | Top news kept in the channel post; the rest plus 番外編 go in-thread (`0` = no split) |
 | `[schedule]` | `frequency` | `daily` \| `weekly` |
 | `[schedule]` | `weekday` | `monday`..`sunday` (weekly only) |
 | `[schedule]` | `hour` | Delivery hour `0`–`23` in `timezone` |

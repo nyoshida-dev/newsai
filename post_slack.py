@@ -25,12 +25,15 @@ class SlackPoster:
         default_channel: Optional[str] = None,
         verbose: bool = False,
         header: str = "",
+        lead_items: int = 0,
     ):
         self.client = WebClient(token=token)
         self.default_channel = default_channel or os.environ.get("SLACK_CHANNEL")
         self._channel_cache: Dict[str, str] = {}
         self.verbose = verbose
         self.header = header
+        # チャンネル本文に残す先頭ニュースの件数。0 は分割なし（従来動作）。
+        self.lead_items = max(0, lead_items)
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -211,29 +214,40 @@ class SlackPoster:
             )
         return blocks
 
-    def _build_section_messages(self, header_text: str, sections: List[Any]) -> List[List[Dict[str, Any]]]:
+    def _build_section_messages(
+        self, header_text: str, sections: List[Any], lead_items: int = 0
+    ) -> List[List[Dict[str, Any]]]:
         """One message per section (番外編 lands in-thread). Long sections split
-        across additional in-thread messages, staying under the 50-block limit."""
+        across additional in-thread messages, staying under the 50-block limit.
+
+        lead_items > 0 なら最初のセクションをさらに分割し、先頭 lead_items 件だけを
+        1通目（チャンネル本文）に残して残りをスレッドへ送る。番号は通しで振る。
+        """
         messages: List[List[Dict[str, Any]]] = []
         for si, (title, items) in enumerate(sections):
             icon = self._SECTION_ICON.get(title, "•")
             subhead = {"type": "section", "text": {"type": "mrkdwn", "text": f"*{icon} {title}*"}}
-            blocks: List[Dict[str, Any]] = []
-            if si == 0:
-                blocks.append(
-                    {"type": "header", "text": {"type": "plain_text", "text": header_text[:150], "emoji": True}}
-                )
-            blocks.append(subhead)
-            for i, it in enumerate(items, 1):
-                grp = self._item_blocks(i, it)
-                if len(blocks) + len(grp) + 1 > self._MAX_BLOCKS:
-                    messages.append(blocks)
-                    blocks = [subhead]
-                blocks.extend(grp)
-                blocks.append({"type": "divider"})
-            if blocks and blocks[-1]["type"] == "divider":
-                blocks.pop()
-            messages.append(blocks)
+            # (開始番号, 対象アイテム) の並び。通常は1グループのみ。
+            groups: List[Any] = [(1, items)]
+            if si == 0 and 0 < lead_items < len(items):
+                groups = [(1, items[:lead_items]), (lead_items + 1, items[lead_items:])]
+            for gi, (start, group_items) in enumerate(groups):
+                blocks: List[Dict[str, Any]] = []
+                if si == 0 and gi == 0:
+                    blocks.append(
+                        {"type": "header", "text": {"type": "plain_text", "text": header_text[:150], "emoji": True}}
+                    )
+                blocks.append(subhead)
+                for i, it in enumerate(group_items, start):
+                    grp = self._item_blocks(i, it)
+                    if len(blocks) + len(grp) + 1 > self._MAX_BLOCKS:
+                        messages.append(blocks)
+                        blocks = [subhead]
+                    blocks.extend(grp)
+                    blocks.append({"type": "divider"})
+                if blocks and blocks[-1]["type"] == "divider":
+                    blocks.pop()
+                messages.append(blocks)
         return messages
 
     def _permalink(self, channel_id: str, ts: Optional[str]) -> Optional[str]:
@@ -275,7 +289,21 @@ class SlackPoster:
     def _post_blocks(
         self, channel_id: str, sections: List[Any], thread: bool, header_text: str
     ) -> Optional[str]:
-        messages = self._build_section_messages(header_text, sections)
+        # スレッド化しない場合は全部チャンネル本文に並ぶので分割しても意味がない。
+        lead = self.lead_items if thread else 0
+        messages = self._build_section_messages(header_text, sections, lead_items=lead)
+        if lead and len(messages) > 1:
+            total = sum(len(items) for _, items in sections)
+            rest = total - min(lead, len(sections[0][1]))
+            if rest > 0:
+                messages[0].append(
+                    {
+                        "type": "context",
+                        "elements": [
+                            {"type": "mrkdwn", "text": f"🧵 残り{rest}件はスレッドに投稿しています"}
+                        ],
+                    }
+                )
         first = self.client.chat_postMessage(
             channel=channel_id, blocks=messages[0], text=header_text
         )
@@ -315,6 +343,7 @@ def main() -> int:
   echo "テキスト" | python post_slack.py --channel general
   python post_slack.py --channel general --text "本文"
   python post_slack.py --no-thread --text "スレッド化しない"
+  python post_slack.py --lead-items 1 --text "1件だけ本文、残りはスレッド"
   python post_slack.py -v --text "詳細ログを表示"
         """,
     )
@@ -322,6 +351,12 @@ def main() -> int:
     parser.add_argument("--token", type=str, help="Slackボットトークン")
     parser.add_argument("--text", type=str, help="投稿する本文。未指定時はstdinを読む")
     parser.add_argument("--no-thread", action="store_true", help="スレッド化しない")
+    parser.add_argument(
+        "--lead-items",
+        type=int,
+        default=0,
+        help="チャンネル本文に残す先頭ニュース件数（0=分割しない）",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="詳細なログを出力する")
     args = parser.parse_args()
 
@@ -345,7 +380,8 @@ def main() -> int:
     poster = SlackPoster(
         token=slack_token,
         default_channel=args.channel or os.environ.get("SLACK_CHANNEL"),
-        verbose=args.verbose
+        verbose=args.verbose,
+        lead_items=args.lead_items,
     )
     try:
         poster.post(text=text.strip(), channel=args.channel, thread=not args.no_thread)
