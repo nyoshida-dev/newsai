@@ -61,7 +61,7 @@ instruction_file = ""
 
 [collect]
 source = "web"
-days = 2
+days = 1
 channel_filter = ""
 exclude_channels = []
 max_messages_per_channel = 100
