@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>{{ header }} {{ r.date }}</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  :root {
+    --ink: #1d2433;
+    --muted: #5b6475;
+    --line: #e3e6ec;
+    --bg-soft: #f6f7f9;
+    --accent: #1f3a5f;
+    --model: #6d28d9;  --model-bg: #f5f3ff;
+    --api: #0e7490;    --api-bg: #ecfeff;
+    --tool: #15803d;   --tool-bg: #f0fdf4;
+    --other: #475569;  --other-bg: #f8fafc;
+    --x: #0f1419;      --x-bg: #f4f6f8;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    color: var(--ink);
+    font-size: 9.5pt;
+    line-height: 1.65;
+  }
+  a { color: var(--accent); text-decoration: none; word-break: break-all; }
+
+  .header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 3px solid var(--accent); padding-bottom: 8px; margin-bottom: 14px;
+  }
+  .header .kicker { font-size: 8.5pt; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+  .header h1 { margin: 2px 0 0; font-size: 19pt; font-weight: 700; letter-spacing: .02em; }
+  .header .meta { text-align: right; font-size: 8.5pt; color: var(--muted); }
+  .header .meta strong { display: block; font-size: 12pt; color: var(--ink); }
+
+  .summary {
+    background: var(--bg-soft); border-left: 4px solid var(--accent);
+    padding: 10px 14px; margin-bottom: 14px; border-radius: 0 6px 6px 0;
+  }
+  .summary .stats { display: flex; gap: 18px; margin-top: 6px; font-size: 8.5pt; color: var(--muted); }
+  .summary .stats b { color: var(--ink); font-size: 11pt; margin-right: 2px; }
+
+  h2 { font-size: 11pt; margin: 0 0 6px; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 8.5pt; }
+  th { text-align: left; font-weight: 600; color: var(--muted); border-bottom: 1.5px solid var(--ink); padding: 5px 6px; white-space: nowrap; }
+  td { border-bottom: 1px solid var(--line); padding: 6px; vertical-align: top; }
+  td.nowrap { white-space: nowrap; }
+
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 7.5pt; font-weight: 700; white-space: nowrap; color: #fff; }
+  .badge.model { background: var(--model); }
+  .badge.api { background: var(--api); }
+  .badge.tool { background: var(--tool); }
+  .badge.other { background: var(--other); }
+  .badge.x { background: var(--x); }
+  .badge.update { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+
+  .card { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; break-inside: avoid; overflow: hidden; }
+  .card-head { padding: 9px 14px; display: flex; gap: 10px; align-items: flex-start; }
+  .card.model .card-head { background: var(--model-bg); border-bottom: 2px solid var(--model); }
+  .card.api .card-head { background: var(--api-bg); border-bottom: 2px solid var(--api); }
+  .card.tool .card-head { background: var(--tool-bg); border-bottom: 2px solid var(--tool); }
+  .card.other .card-head { background: var(--other-bg); border-bottom: 2px solid var(--other); }
+  .card-no { font-size: 15pt; font-weight: 700; color: var(--muted); line-height: 1.1; min-width: 22px; }
+  .card-title { flex: 1; }
+  .card-title h3 { margin: 0; font-size: 11pt; line-height: 1.45; }
+  .card-title .sub { font-size: 8pt; color: var(--muted); margin-top: 2px; }
+  .card-badges { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+
+  .card-body { padding: 8px 14px 10px; }
+  .row { display: flex; gap: 10px; margin-bottom: 6px; }
+  .row .k { width: 64px; flex-shrink: 0; font-size: 8pt; font-weight: 700; color: var(--muted); padding-top: 1px; }
+  .row .v { flex: 1; }
+  .row .v ul { margin: 0; padding-left: 14px; }
+  .row.why .v { background: #eef4ff; border-radius: 4px; padding: 5px 8px; font-weight: 600; }
+  .row.x .v { background: var(--x-bg); border-radius: 4px; padding: 5px 8px; }
+  .row.x .v .posts { margin-top: 3px; font-size: 7.5pt; }
+  .refs { margin: 0; padding-left: 14px; font-size: 7.5pt; }
+
+  .footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 7.5pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="kicker">DAILY AI NEWS</div>
+    <h1>{{ header }}</h1>
+  </div>
+  <div class="meta">
+    <strong>{{ r.date }}</strong>
+    対象期間: {{ r.period or "直近" }}
+  </div>
+</div>
+
+<div class="summary">
+  {{ r.summary }}
+  <div class="stats">
+    {% set xcount = r["items"] | selectattr("x_buzz") | list | length %}
+    <span><b>{{ r["items"] | length }}</b>件を掲載</span>
+    {% if xcount %}<span><b>{{ xcount }}</b>件が X で話題</span>{% endif %}
+    {% if r.reviewed %}<span>候補 <b>{{ r.reviewed }}</b>件（重複をまとめた後）から選定</span>{% endif %}
+  </div>
+</div>
+
+<h2>一覧</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>分類</th><th>提供元</th><th>トピック</th><th>X</th></tr>
+  </thead>
+  <tbody>
+  {% for it in r["items"] %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td class="nowrap"><span class="badge {{ it.category | cat_class }}">{{ it.category }}</span></td>
+      <td class="nowrap">{{ it.vendor }}</td>
+      <td>{% if it.is_update %}【続報】{% endif %}{{ it.headline }}</td>
+      <td class="nowrap">{{ "話題" if it.x_buzz else "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>詳細</h2>
+{% for it in r["items"] %}
+<div class="card {{ it.category | cat_class }}">
+  <div class="card-head">
+    <div class="card-no">{{ loop.index }}</div>
+    <div class="card-title">
+      <h3>{{ it.title }}</h3>
+      <div class="sub">{{ it.vendor }}{% if it.released %}　発表日: {{ it.released }}{% endif %}</div>
+    </div>
+    <div class="card-badges">
+      <span class="badge {{ it.category | cat_class }}">{{ it.category }}</span>
+      {% if it.is_update %}<span class="badge update">続報</span>{% endif %}
+      {% if it.x_buzz %}<span class="badge x">X で話題</span>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row"><div class="k">概要</div><div class="v">{{ it.overview }}</div></div>
+    {% if it.points %}
+    <div class="row"><div class="k">ポイント</div><div class="v"><ul>
+      {% for p in it.points %}<li>{{ p }}</li>{% endfor %}
+    </ul></div></div>
+    {% endif %}
+    {% if it.why %}<div class="row why"><div class="k">使いどころ</div><div class="v">{{ it.why }}</div></div>{% endif %}
+    {% if it.x_buzz %}
+    <div class="row x"><div class="k">X の反応</div><div class="v">
+      {{ it.x_buzz }}
+      {% if it.x_posts %}<div class="posts">{% for p in it.x_posts %}<a href="{{ p.url }}">{{ p.label or p.url }}</a>{% if not loop.last %}　{% endif %}{% endfor %}</div>{% endif %}
+    </div></div>
+    {% endif %}
+    <div class="row"><div class="k">出典</div><div class="v">
+      <ul class="refs">
+      {% for s in it.sources %}<li>{% if s.label %}{{ s.label }}: {% endif %}<a href="{{ s.url }}">{{ s.url }}</a></li>{% endfor %}
+      </ul>
+    </div></div>
+  </div>
+</div>
+{% endfor %}
+
+<div class="footer">
+  本レポートは Claude が Web 検索と X の公開投稿をもとに自動で収集・要約したものです。
+  同じ発表を扱う複数の記事は1件にまとめています。詳細や最新の状況は出典をご確認ください。
+</div>
+
+</body>
+</html>

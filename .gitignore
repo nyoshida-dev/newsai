@@ -211,3 +211,7 @@ slack_messages_*.json
 
 # AI orchestration artifacts
 .ai/
+
+# daily_news（Claude スケジュールタスク）の出力と通知済み記録
+out/
+data/

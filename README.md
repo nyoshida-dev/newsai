@@ -3,6 +3,39 @@
 newsai (News×AI) collects the latest AI news from the web and X (via LLM web search and/or RSS), generates a weekly digest, and posts it to Slack.
 Slack-message collection remains available (`[collect] source = "slack"`). Scheduled runs use GitHub Actions. Fork this repository and configure the secrets / variables below for your chosen LLM provider.
 
+### 日次配信（Claude スケジュールタスク・PDF 版）
+
+GitHub Actions の代わりに、ローカルの Claude デスクトップアプリのスケジュールタスクから実行する経路。
+Claude 自身が Web と X を調べ、同じ話題をまとめたうえで 3〜5件に絞り、PDF にして Slack に投稿する。
+
+```
+毎朝 7:00  Claude のスケジュールタスクが起動（登録内容: prompts/scheduled-task.md）
+  1. Claude      手順書 prompts/daily.md に沿って Web・X（site:x.com 検索）を調査
+  2. Claude      重複をまとめ、通知済みトピック（data/notified.json, 14日）を除いて 3〜5件を選ぶ → out/report.json
+  3. render      templates/report.html から A4 の PDF を作る（Chrome で印刷）  → out/ai-news-日付.pdf
+  4. post_slack  一覧と要約の本文 + PDF を投稿し、掲載トピックを通知済みに記録
+```
+
+| 状況 | Slack に届くもの |
+|---|---|
+| 掲載あり | 一覧と要約の本文 + PDF |
+| 掲載なし | 「本日は掲載なし」と理由 |
+| 途中でエラー | 「:warning: 実行に失敗しました」とエラー内容 |
+
+```bash
+uv run python -m daily_news.state                 # 通知済みトピックを表示
+uv run python -m daily_news.render                # out/report.json → PDF
+uv run python -m daily_news.post_slack --check    # トークンとスコープの確認
+uv run python -m daily_news.post_slack --dry-run  # 投稿内容の確認だけ
+uv run python -m daily_news.post_slack            # 投稿する
+uv run python -m daily_news.post_slack --error "内容"
+```
+
+- トークンは `.env` の `SLACK_BOT_TOKEN`（なければキーチェーン `newsai` / `slack-bot-token`）。通知先は `config.toml` の `[post].channel`、見出しは `[post].header`。
+- PDF の添付にはボットに `files:write` スコープが必要。無い場合は PDF なしで本文（出典リンク付き）だけを投稿する。
+- X の情報は WebSearch のスニペットで確認できたものだけを使う（x.com はログインが必要で本文を読めないことが多いため、取りこぼしはある）。
+- Mac とアプリが起動していないと実行されない（起動時に実行される）。
+
 ### Secrets and variables (provider matrix)
 
 | Provider | Local install / login | GitHub Actions secret(s) |
